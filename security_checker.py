@@ -22,6 +22,7 @@ from sslyze import (
 )
 from sslyze.errors import ServerHostnameCouldNotBeResolved
 from sslyze.plugins.scan_commands import ScanCommand
+import dns.resolver
 
 def check_host_exists(hostname):
     """Vérifie si un nom d'hôte existe via une résolution DNS."""
@@ -149,7 +150,7 @@ def scan_tls_protocols(hostname):
                     continue
 
                 result = result_attempt.result
-                if result.is_protocol_supported:
+                if result.accepted_cipher_suites:
                     if name in ["TLS 1.2", "TLS 1.3"]:
                         print(f"    ✅ {name} : Supporté (CONFORME)")
                     else:
@@ -182,6 +183,48 @@ def check_http_to_https_redirect(hostname):
         print("  ERREUR : La connexion au serveur a échoué (timeout) lors du test de redirection.")
     except requests.exceptions.RequestException as e:
         print(f"  Erreur inattendue lors du test de redirection : {e}")
+
+def check_email_security_dns(hostname):
+    """Vérifie la présence des enregistrements DNS de sécurité e-mail (DMARC, SPF)."""
+    print("\n--- Analyse des enregistrements de sécurité e-mail (DNS) ---")
+    
+    # 1. Vérification DMARC
+    print("\n  1. Enregistrement DMARC :")
+    try:
+        dmarc_query = f"_dmarc.{hostname}"
+        answers = dns.resolver.resolve(dmarc_query, 'TXT')
+        dmarc_record = ' '.join([b.decode('utf-8') for b in answers[0].strings])
+        print(f"    ✅ SUCCÈS : Enregistrement DMARC trouvé.")
+        print(f"      Valeur : {dmarc_record}")
+    except dns.resolver.NXDOMAIN:
+        print("    ❌ ERREUR : Aucun enregistrement DMARC trouvé. Très recommandé.")
+    except dns.resolver.NoAnswer:
+        print("    ❌ ERREUR : La requête DMARC n'a retourné aucune réponse.")
+    except Exception as e:
+        print(f"    ⚠️ AVERTISSEMENT : Une erreur est survenue lors de la recherche DMARC : {e}")
+
+    # 2. Vérification SPF
+    print("\n  2. Enregistrement SPF :")
+    try:
+        answers = dns.resolver.resolve(hostname, 'TXT')
+        spf_record = None
+        for record in answers:
+            txt_record = ' '.join([b.decode('utf-8') for b in record.strings])
+            if txt_record.startswith('v=spf1'):
+                spf_record = txt_record
+                break
+        
+        if spf_record:
+            print(f"    ✅ SUCCÈS : Enregistrement SPF trouvé.")
+            print(f"      Valeur : {spf_record}")
+        else:
+            print("    ❌ ERREUR : Aucun enregistrement SPF (v=spf1) trouvé dans les enregistrements TXT.")
+    except dns.resolver.NXDOMAIN:
+        print(f"    ❌ ERREUR : Le domaine '{hostname}' n'existe pas.")
+    except dns.resolver.NoAnswer:
+        print("    ❌ ERREUR : Aucune réponse pour les enregistrements TXT du domaine (nécessaire pour SPF).")
+    except Exception as e:
+        print(f"    ⚠️ AVERTISSEMENT : Une erreur est survenue lors de la recherche SPF : {e}")
 
 def check_security_headers(hostname):
     """Analyse les en-têtes de sécurité HTTP, y compris leurs valeurs."""
@@ -272,6 +315,7 @@ def main():
     scan_tls_protocols(hostname)
     check_http_to_https_redirect(hostname)
     check_security_headers(hostname)
+    check_email_security_dns(hostname)
 
 if __name__ == "__main__":
     main()

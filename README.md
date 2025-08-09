@@ -25,6 +25,9 @@ Le script effectue actuellement les vérifications suivantes :
 4.  **Scan des versions de protocoles SSL/TLS supportées**
     *   Le script scanne activement le serveur pour déterminer quelles versions de protocoles (de SSL 2.0 à TLS 1.3) sont activées. Il signale les protocoles obsolètes et vulnérables (SSLv2, SSLv3, TLS 1.0, TLS 1.1) comme étant non conformes, car leur utilisation expose à des risques de sécurité connus.
 
+5.  **Vérification des enregistrements DMARC et SPF**
+    *   Ces enregistrements DNS protègent le domaine contre l'usurpation d'e-mail (spoofing). SPF spécifie les serveurs autorisés à envoyer des e-mails, et DMARC définit la politique à appliquer en cas d'échec de ces vérifications.
+
 ## Installation
 
 1.  Assurez-vous d'avoir Python 3 installé sur votre système.
