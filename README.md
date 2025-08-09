@@ -25,8 +25,8 @@ Le script effectue actuellement les vérifications suivantes :
 4.  **Scan des versions de protocoles SSL/TLS supportées**
     *   Le script scanne activement le serveur pour déterminer quelles versions de protocoles (de SSL 2.0 à TLS 1.3) sont activées. Il signale les protocoles obsolètes et vulnérables (SSLv2, SSLv3, TLS 1.0, TLS 1.1) comme étant non conformes, car leur utilisation expose à des risques de sécurité connus.
 
-5.  **Vérification des enregistrements DNS de sécurité (NS, DMARC, SPF)**
-    *   Le script vérifie la présence des serveurs de noms (NS) faisant autorité pour le domaine. Il recherche également les enregistrements DMARC et SPF qui protègent le domaine contre l'usurpation d'e-mail (spoofing). Le script fournit des conseils de correction en cas d'absence d'enregistrement DMARC.
+5.  **Vérification des enregistrements DNS de sécurité (A, MX, NS, DMARC, SPF)**
+    *   Le script vérifie les enregistrements DNS fondamentaux (A, MX, NS) et ceux liés à la sécurité des e-mails (DMARC, SPF). Il fournit des conseils de correction si les enregistrements DMARC ou SPF sont manquants.
 
 6.  **Analyse des attributs de cookies (HttpOnly, Secure, SameSite)**
     *   Des cookies mal configurés peuvent être volés, ce qui expose les sessions des utilisateurs. S'assurer qu'ils sont marqués `HttpOnly` (pour empêcher l'accès via JavaScript), `Secure` (pour forcer le chiffrement) et `SameSite` (pour prévenir les attaques CSRF) protège contre de nombreuses menaces.

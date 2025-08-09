@@ -185,8 +185,8 @@ def check_http_to_https_redirect(hostname):
         print(f"  Erreur inattendue lors du test de redirection : {e}")
 
 def check_email_security_dns(hostname):
-    """Vérifie la présence des enregistrements DNS de sécurité (NS, DMARC, SPF)."""
-    print("\n--- Analyse des enregistrements de sécurité e-mail (DNS) ---")
+    """Vérifie la présence des enregistrements DNS de sécurité (NS, A, MX, DMARC, SPF)."""
+    print("\n--- Analyse des enregistrements DNS et de sécurité e-mail ---")
     
     # 1. Vérification des serveurs de noms (NS)
     print("\n  1. Serveurs de noms (NS) :")
@@ -201,8 +201,34 @@ def check_email_security_dns(hostname):
     except Exception as e:
         print(f"    ⚠️ AVERTISSEMENT : Une erreur est survenue lors de la recherche des serveurs de noms : {e}")
 
-    # 2. Vérification DMARC
-    print("\n  2. Enregistrement DMARC :")
+    # 2. Vérification de l'enregistrement A
+    print("\n  2. Enregistrement A (Adresse IP) :")
+    try:
+        answers = dns.resolver.resolve(hostname, 'A')
+        ips = [rdata.address for rdata in answers]
+        print(f"    ✅ SUCCÈS : {len(ips)} adresse(s) IP trouvée(s).")
+        for ip in ips:
+            print(f"      - {ip}")
+    except dns.resolver.NoAnswer:
+        print("    ❌ ERREUR : Aucun enregistrement A trouvé.")
+    except Exception as e:
+        print(f"    ⚠️ AVERTISSEMENT : Une erreur est survenue lors de la recherche de l'enregistrement A : {e}")
+        
+    # 3. Vérification de l'enregistrement MX
+    print("\n  3. Enregistrements MX (Serveurs de messagerie) :")
+    try:
+        answers = dns.resolver.resolve(hostname, 'MX')
+        mx_records = sorted([(rdata.preference, str(rdata.exchange)) for rdata in answers])
+        print(f"    ✅ SUCCÈS : {len(mx_records)} serveurs de messagerie trouvés.")
+        for pref, exch in mx_records:
+            print(f"      - Priorité {pref}: {exch}")
+    except dns.resolver.NoAnswer:
+        print("    ❌ ERREUR : Aucun enregistrement MX trouvé.")
+    except Exception as e:
+        print(f"    ⚠️ AVERTISSEMENT : Une erreur est survenue lors de la recherche des enregistrements MX : {e}")
+
+    # 4. Vérification DMARC
+    print("\n  4. Enregistrement DMARC :")
     try:
         dmarc_query = f"_dmarc.{hostname}"
         answers = dns.resolver.resolve(dmarc_query, 'TXT')
@@ -224,8 +250,8 @@ def check_email_security_dns(hostname):
     except Exception as e:
         print(f"    ⚠️ AVERTISSEMENT : Une erreur est survenue lors de la recherche DMARC : {e}")
 
-    # 3. Vérification SPF
-    print("\n  3. Enregistrement SPF :")
+    # 5. Vérification SPF
+    print("\n  5. Enregistrement SPF :")
     try:
         answers = dns.resolver.resolve(hostname, 'TXT')
         spf_record = None
@@ -240,6 +266,12 @@ def check_email_security_dns(hostname):
             print(f"      Valeur : {spf_record}")
         else:
             print("    ❌ ERREUR : Aucun enregistrement SPF (v=spf1) trouvé dans les enregistrements TXT.")
+            print("\n      --- Comment corriger ---")
+            print("      1. Créez un enregistrement DNS de type TXT pour votre domaine principal.")
+            print("      2. La valeur doit commencer par 'v=spf1' et inclure les adresses IP ou les domaines autorisés à envoyer des e-mails en votre nom.")
+            print("         Exemple : v=spf1 ip4:192.168.0.1 include:_spf.google.com ~all")
+            print("      3. '~all' ou '-all' à la fin indique comment traiter les e-mails non autorisés.")
+            print("      ------------------------")
     except dns.resolver.NoAnswer:
         print("    ❌ ERREUR : Aucune réponse pour les enregistrements TXT du domaine (nécessaire pour SPF).")
     except Exception as e:
