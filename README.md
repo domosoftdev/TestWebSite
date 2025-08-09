@@ -10,20 +10,20 @@ Ce script Python analyse une URL donnée pour évaluer certains aspects de sa co
 
 Le script effectue actuellement les vérifications suivantes :
 
-1.  **Analyse du Certificat SSL/TLS**
-    *   Vérifie le **sujet** du certificat (le nom commun).
-    *   Vérifie l'**émetteur** du certificat.
-    *   Vérifie la **date d'expiration** et signale si le certificat est expiré.
+1.  **Vérification de la chaîne de confiance et de l'expiration du certificat SSL/TLS**
+    *   C'est le point de départ. Si le certificat est invalide ou expiré, tout le reste est compromis. Un certificat non valide empêche la connexion sécurisée, ce qui expose les données des utilisateurs. Le vérifier en premier garantit que la communication entre le client et le serveur est sécurisée.
 
-2.  **Analyse des En-têtes de Sécurité HTTP**
-    *   Détecte la présence des en-têtes de sécurité recommandés suivants :
-        *   `Strict-Transport-Security`
-        *   `Content-Security-Policy`
-        *   `Content-Security-Policy-Report-Only`
-        *   `X-Content-Type-Options`
-        *   `X-Frame-Options`
-        *   `Referrer-Policy`
-        *   `Permissions-Policy`
+2.  **Analyse des en-têtes de sécurité HTTP (Strict-Transport-Security, X-Frame-Options, X-Content-Type-Options)**
+    *   Ces en-têtes sont des mesures de sécurité défensives très efficaces et faciles à implémenter.
+    *   **Strict-Transport-Security (HSTS)** force le navigateur à n'utiliser que des connexions HTTPS pour ce site, ce qui réduit le risque de man-in-the-middle.
+    *   **X-Frame-Options** et **Content-Security-Policy (CSP)** protègent contre le clickjacking et l'injection de contenu malveillant en contrôlant comment le site peut être intégré dans d'autres pages.
+    *   **X-Content-Type-Options** empêche les navigateurs d'interpréter le code de manière incorrecte, ce qui protège contre certaines attaques.
+
+3.  **Redirections HTTP vers HTTPS**
+    *   Une fois que vous savez que le certificat est valide, assurez-vous que toutes les requêtes non chiffrées sont automatiquement redirigées vers la version sécurisée du site. Si ce n'est pas le cas, un attaquant peut intercepter les premières requêtes des utilisateurs sur une connexion non chiffrée.
+
+4.  **Vérification des versions de TLS et des suites de chiffrement**
+    *   Après avoir vérifié la présence d'un certificat, il est crucial de s'assurer que le protocole de chiffrement lui-même est fort. La prise en charge de versions obsolètes de TLS (comme 1.0 ou 1.1) ou de suites de chiffrement faibles peut rendre le site vulnérable à des attaques connues, même si le certificat est valide.
 
 ## Installation
 
@@ -41,7 +41,11 @@ Pour analyser un site web, exécutez le script depuis votre terminal en lui pass
 
 ```bash
 python3 security_checker.py google.com
-Exemple de sortie
+```
+
+### Exemple de sortie
+
+```
 Analyse de l'hôte : google.com
 
 --- Analyse du certificat SSL/TLS ---
@@ -56,4 +60,4 @@ Analyse de l'hôte : google.com
   En-têtes de sécurité trouvés :
     - Content-Security-Policy-Report-Only: Trouvé
     - X-Frame-Options: Trouvé
----
+```
