@@ -185,11 +185,24 @@ def check_http_to_https_redirect(hostname):
         print(f"  Erreur inattendue lors du test de redirection : {e}")
 
 def check_email_security_dns(hostname):
-    """Vérifie la présence des enregistrements DNS de sécurité e-mail (DMARC, SPF)."""
+    """Vérifie la présence des enregistrements DNS de sécurité (NS, DMARC, SPF)."""
     print("\n--- Analyse des enregistrements de sécurité e-mail (DNS) ---")
     
-    # 1. Vérification DMARC
-    print("\n  1. Enregistrement DMARC :")
+    # 1. Vérification des serveurs de noms (NS)
+    print("\n  1. Serveurs de noms (NS) :")
+    try:
+        answers = dns.resolver.resolve(hostname, 'NS')
+        nameservers = [str(rdata.target) for rdata in answers]
+        print(f"    ✅ SUCCÈS : {len(nameservers)} serveurs de noms trouvés.")
+        for ns in nameservers:
+            print(f"      - {ns}")
+    except dns.resolver.NoAnswer:
+        print("    ❌ ERREUR : Aucun enregistrement NS trouvé.")
+    except Exception as e:
+        print(f"    ⚠️ AVERTISSEMENT : Une erreur est survenue lors de la recherche des serveurs de noms : {e}")
+
+    # 2. Vérification DMARC
+    print("\n  2. Enregistrement DMARC :")
     try:
         dmarc_query = f"_dmarc.{hostname}"
         answers = dns.resolver.resolve(dmarc_query, 'TXT')
@@ -200,7 +213,7 @@ def check_email_security_dns(hostname):
             print("      ℹ️ INFO : La politique est 'none'. C'est un bon début pour la surveillance. Pensez à passer à 'quarantine' ou 'reject' après avoir analysé les rapports.")
         if 'rua=' in dmarc_record.lower():
             print("      ℹ️ INFO : Assurez-vous de surveiller les rapports envoyés à l'adresse 'rua' pour identifier les problèmes d'envoi.")
-    except dns.resolver.NXDOMAIN:
+    except (dns.resolver.NXDOMAIN, dns.resolver.NoAnswer):
         print("    ❌ ERREUR : Aucun enregistrement DMARC trouvé. Très recommandé.")
         print("\n      --- Comment corriger ---")
         print("      1. Créez un enregistrement DNS de type TXT avec le nom d'hôte '_dmarc'.")
@@ -208,13 +221,11 @@ def check_email_security_dns(hostname):
         print("         v=DMARC1; p=none; rua=mailto:votre-adresse@exemple.com")
         print("      3. Remplacez 'votre-adresse@exemple.com' par une adresse où vous pouvez recevoir les rapports.")
         print("      ------------------------")
-    except dns.resolver.NoAnswer:
-        print("    ❌ ERREUR : La requête DMARC n'a retourné aucune réponse.")
     except Exception as e:
         print(f"    ⚠️ AVERTISSEMENT : Une erreur est survenue lors de la recherche DMARC : {e}")
 
-    # 2. Vérification SPF
-    print("\n  2. Enregistrement SPF :")
+    # 3. Vérification SPF
+    print("\n  3. Enregistrement SPF :")
     try:
         answers = dns.resolver.resolve(hostname, 'TXT')
         spf_record = None
@@ -229,8 +240,6 @@ def check_email_security_dns(hostname):
             print(f"      Valeur : {spf_record}")
         else:
             print("    ❌ ERREUR : Aucun enregistrement SPF (v=spf1) trouvé dans les enregistrements TXT.")
-    except dns.resolver.NXDOMAIN:
-        print(f"    ❌ ERREUR : Le domaine '{hostname}' n'existe pas.")
     except dns.resolver.NoAnswer:
         print("    ❌ ERREUR : Aucune réponse pour les enregistrements TXT du domaine (nécessaire pour SPF).")
     except Exception as e:
