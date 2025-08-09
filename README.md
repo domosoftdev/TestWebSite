@@ -22,8 +22,8 @@ Le script effectue actuellement les vérifications suivantes :
 3.  **Redirections HTTP vers HTTPS**
     *   Une fois que vous savez que le certificat est valide, assurez-vous que toutes les requêtes non chiffrées sont automatiquement redirigées vers la version sécurisée du site. Si ce n'est pas le cas, un attaquant peut intercepter les premières requêtes des utilisateurs sur une connexion non chiffrée.
 
-4.  **Vérification des versions de TLS et des suites de chiffrement**
-    *   Après avoir vérifié la présence d'un certificat, il est crucial de s'assurer que le protocole de chiffrement lui-même est fort. La prise en charge de versions obsolètes de TLS (comme 1.0 ou 1.1) ou de suites de chiffrement faibles peut rendre le site vulnérable à des attaques connues, même si le certificat est valide.
+4.  **Scan des versions de protocoles SSL/TLS supportées**
+    *   Le script scanne activement le serveur pour déterminer quelles versions de protocoles (de SSL 2.0 à TLS 1.3) sont activées. Il signale les protocoles obsolètes et vulnérables (SSLv2, SSLv3, TLS 1.0, TLS 1.1) comme étant non conformes, car leur utilisation expose à des risques de sécurité connus.
 
 ## Installation
 

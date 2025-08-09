@@ -13,6 +13,15 @@ import sys
 import urllib.parse
 import requests
 from datetime import datetime
+from sslyze import (
+    Scanner,
+    ServerScanRequest,
+    ServerNetworkLocation,
+    ScanCommandAttemptStatusEnum,
+    ServerScanStatusEnum,
+)
+from sslyze.errors import ServerHostnameCouldNotBeResolved
+from sslyze.plugins.scan_commands import ScanCommand
 
 def check_host_exists(hostname):
     """Vérifie si un nom d'hôte existe via une résolution DNS."""
@@ -56,16 +65,6 @@ def check_ssl_certificate(hostname):
                 else:
                     print("  Le certificat est valide.")
                 
-                # Vérification de la version de TLS et du cipher
-                tls_version = ssock.version()
-                cipher_suite = ssock.cipher()
-                print(f"  Version TLS négociée : {tls_version}")
-                if tls_version in ["TLSv1.2", "TLSv1.3"]:
-                    print("    ✅ SUCCÈS : La version de TLS est moderne et sécurisée.")
-                else:
-                    print(f"    ❌ ERREUR : La version de TLS ({tls_version}) est obsolète et non sécurisée.")
-                print(f"  Suite de chiffrement : {cipher_suite[0]}")
-
     except ssl.SSLCertVerificationError as e:
         print(f"  ERREUR : La vérification du certificat a échoué ({e.reason}).")
         print("    Cause probable : Le serveur n'envoie pas la chaîne de certificats complète (certificat intermédiaire manquant) ou utilise un certificat auto-signé.")
@@ -107,6 +106,61 @@ def check_ssl_certificate(hostname):
 
     print(f"\n  Pour une analyse SSL/TLS complète, consultez le rapport SSL Labs :")
     print(f"  https://www.ssllabs.com/ssltest/analyze.html?d={hostname}")
+
+def scan_tls_protocols(hostname):
+    """Scanne les protocoles SSL/TLS supportés en utilisant sslyze."""
+    print("\n--- Scan des protocoles SSL/TLS supportés ---")
+    try:
+        server_location = ServerNetworkLocation(hostname=hostname, port=443)
+        
+        scan_request = ServerScanRequest(
+            server_location=server_location,
+            scan_commands={
+                ScanCommand.SSL_2_0_CIPHER_SUITES, ScanCommand.SSL_3_0_CIPHER_SUITES,
+                ScanCommand.TLS_1_0_CIPHER_SUITES, ScanCommand.TLS_1_1_CIPHER_SUITES,
+                ScanCommand.TLS_1_2_CIPHER_SUITES, ScanCommand.TLS_1_3_CIPHER_SUITES,
+            },
+        )
+
+        scanner = Scanner()
+        scanner.queue_scans([scan_request])
+
+        print(f"  Scan en cours sur {hostname}, cela peut prendre un moment...")
+        
+        for server_scan_result in scanner.get_results():
+            if server_scan_result.scan_status == ServerScanStatusEnum.ERROR_NO_CONNECTIVITY:
+                print(f"  ERREUR : Impossible de se connecter à {hostname}: {server_scan_result.connectivity_error_trace}")
+                return
+
+            # Associer les résultats aux noms de protocoles
+            scan_result = server_scan_result.scan_result
+            protocol_results = {
+                "SSL 2.0": scan_result.ssl_2_0_cipher_suites,
+                "SSL 3.0": scan_result.ssl_3_0_cipher_suites,
+                "TLS 1.0": scan_result.tls_1_0_cipher_suites,
+                "TLS 1.1": scan_result.tls_1_1_cipher_suites,
+                "TLS 1.2": scan_result.tls_1_2_cipher_suites,
+                "TLS 1.3": scan_result.tls_1_3_cipher_suites,
+            }
+
+            for name, result_attempt in protocol_results.items():
+                if result_attempt.status == ScanCommandAttemptStatusEnum.ERROR:
+                    print(f"    ⚠️  Le scan pour {name} a échoué : {result_attempt.error_reason}")
+                    continue
+
+                result = result_attempt.result
+                if result.is_protocol_supported:
+                    if name in ["TLS 1.2", "TLS 1.3"]:
+                        print(f"    ✅ {name} : Supporté (CONFORME)")
+                    else:
+                        print(f"    ❌ {name} : Supporté (NON CONFORME - Vulnérable)")
+                else:
+                    print(f"    ✅ {name} : Non supporté (CONFORME)")
+            break
+    except ServerHostnameCouldNotBeResolved:
+        print(f"  ERREUR : Le nom d'hôte '{hostname}' n'a pas pu être résolu.")
+    except Exception as e:
+        print(f"  Une erreur inattendue est survenue lors du scan sslyze : {e}")
 
 def check_http_to_https_redirect(hostname):
     """Vérifie si le site redirige automatiquement de HTTP vers HTTPS."""
@@ -215,6 +269,7 @@ def main():
     
     print(f"Hôte trouvé. Début de l'analyse de : {hostname}")
     check_ssl_certificate(hostname)
+    scan_tls_protocols(hostname)
     check_http_to_https_redirect(hostname)
     check_security_headers(hostname)
 
