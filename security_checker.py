@@ -196,8 +196,18 @@ def check_email_security_dns(hostname):
         dmarc_record = ' '.join([b.decode('utf-8') for b in answers[0].strings])
         print(f"    ✅ SUCCÈS : Enregistrement DMARC trouvé.")
         print(f"      Valeur : {dmarc_record}")
+        if 'p=none' in dmarc_record.lower():
+            print("      ℹ️ INFO : La politique est 'none'. C'est un bon début pour la surveillance. Pensez à passer à 'quarantine' ou 'reject' après avoir analysé les rapports.")
+        if 'rua=' in dmarc_record.lower():
+            print("      ℹ️ INFO : Assurez-vous de surveiller les rapports envoyés à l'adresse 'rua' pour identifier les problèmes d'envoi.")
     except dns.resolver.NXDOMAIN:
         print("    ❌ ERREUR : Aucun enregistrement DMARC trouvé. Très recommandé.")
+        print("\n      --- Comment corriger ---")
+        print("      1. Créez un enregistrement DNS de type TXT avec le nom d'hôte '_dmarc'.")
+        print("      2. Commencez avec une valeur simple pour surveiller, sans bloquer d'e-mails :")
+        print("         v=DMARC1; p=none; rua=mailto:votre-adresse@exemple.com")
+        print("      3. Remplacez 'votre-adresse@exemple.com' par une adresse où vous pouvez recevoir les rapports.")
+        print("      ------------------------")
     except dns.resolver.NoAnswer:
         print("    ❌ ERREUR : La requête DMARC n'a retourné aucune réponse.")
     except Exception as e:
