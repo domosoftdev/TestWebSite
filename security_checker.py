@@ -226,6 +226,71 @@ def check_email_security_dns(hostname):
     except Exception as e:
         print(f"    ⚠️ AVERTISSEMENT : Une erreur est survenue lors de la recherche SPF : {e}")
 
+def check_cookie_security(hostname):
+    """Analyse les attributs de sécurité des cookies définis par le serveur."""
+    print("\n--- Analyse de la sécurité des cookies ---")
+    try:
+        url = f"https://{hostname}"
+        response = requests.get(url, timeout=10)
+
+        if not response.cookies:
+            print("  Aucun cookie n'a été défini par le serveur sur la page d'accueil.")
+            return
+
+        # requests.cookies ne contient pas les attributs comme HttpOnly ou SameSite.
+        # Il faut parser les en-têtes 'Set-Cookie' manuellement.
+        raw_cookies = response.raw.headers.get_all('Set-Cookie', [])
+        if not raw_cookies:
+             # Fallback si get_all n'est pas dispo ou vide, on se base sur l'objet cookie
+             if not response.cookies:
+                print("  Aucun cookie n'a été défini par le serveur sur la page d'accueil.")
+                return
+             else: # On fait une analyse partielle
+                for cookie in response.cookies:
+                    print(f"\n  Analyse (partielle) du cookie : '{cookie.name}'")
+                    if cookie.secure:
+                        print("    ✅ SUCCÈS : L'attribut 'Secure' est présent.")
+                    else:
+                        print("    ❌ ERREUR : L'attribut 'Secure' est manquant.")
+                    print("    ℹ️ INFO : L'analyse complète (HttpOnly, SameSite) a échoué, les en-têtes bruts sont indisponibles.")
+                return
+
+
+        for cookie_header in raw_cookies:
+            parts = [p.strip() for p in cookie_header.split(';')]
+            cookie_name = parts[0].split('=')[0]
+            print(f"\n  Analyse du cookie : '{cookie_name}'")
+
+            cookie_attributes = {p.lower() for p in parts[1:]}
+
+            # Secure
+            if 'secure' in cookie_attributes:
+                print("    ✅ SUCCÈS : L'attribut 'Secure' est présent.")
+            else:
+                print("    ❌ ERREUR : L'attribut 'Secure' est manquant.")
+
+            # HttpOnly
+            if 'httponly' in cookie_attributes:
+                print("    ✅ SUCCÈS : L'attribut 'HttpOnly' est présent.")
+            else:
+                print("    ⚠️ AVERTISSEMENT : L'attribut 'HttpOnly' est manquant.")
+            
+            # SameSite
+            samesite_found = False
+            for attr in cookie_attributes:
+                if attr.startswith('samesite='):
+                    value = attr.split('=')[1]
+                    print(f"    ✅ SUCCÈS : L'attribut 'SameSite' est présent avec la valeur '{value}'.")
+                    if value.lower() not in ['strict', 'lax']:
+                        print("      ⚠️ AVERTISSEMENT : La valeur 'None' pour SameSite requiert l'attribut 'Secure'.")
+                    samesite_found = True
+                    break
+            if not samesite_found:
+                print("    ⚠️ AVERTISSEMENT : L'attribut 'SameSite' est manquant.")
+
+    except requests.exceptions.RequestException as e:
+        print(f"  Erreur lors de la récupération des cookies : {e}")
+
 def check_security_headers(hostname):
     """Analyse les en-têtes de sécurité HTTP, y compris leurs valeurs."""
     print("\n--- Analyse des en-têtes de sécurité HTTP ---")
@@ -315,6 +380,7 @@ def main():
     scan_tls_protocols(hostname)
     check_http_to_https_redirect(hostname)
     check_security_headers(hostname)
+    check_cookie_security(hostname)
     check_email_security_dns(hostname)
 
 if __name__ == "__main__":

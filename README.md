@@ -28,6 +28,9 @@ Le script effectue actuellement les vérifications suivantes :
 5.  **Vérification des enregistrements DMARC et SPF**
     *   Ces enregistrements DNS protègent le domaine contre l'usurpation d'e-mail (spoofing). SPF spécifie les serveurs autorisés à envoyer des e-mails, et DMARC définit la politique à appliquer en cas d'échec de ces vérifications.
 
+6.  **Analyse des attributs de cookies (HttpOnly, Secure, SameSite)**
+    *   Des cookies mal configurés peuvent être volés, ce qui expose les sessions des utilisateurs. S'assurer qu'ils sont marqués `HttpOnly` (pour empêcher l'accès via JavaScript), `Secure` (pour forcer le chiffrement) et `SameSite` (pour prévenir les attaques CSRF) protège contre de nombreuses menaces.
+
 ## Installation
 
 1.  Assurez-vous d'avoir Python 3 installé sur votre système.
