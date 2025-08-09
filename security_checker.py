@@ -9,8 +9,17 @@ Vérifie les certificats SSL/TLS et les en-têtes de sécurité HTTP.
 import argparse
 import socket
 import ssl
+import sys
 import requests
 from datetime import datetime
+
+def check_host_exists(hostname):
+    """Vérifie si un nom d'hôte existe via une résolution DNS."""
+    try:
+        socket.gethostbyname_ex(hostname)
+        return True
+    except socket.gaierror:
+        return False
 
 def get_hostname(url):
     """Extrait le nom d'hôte d'une URL."""
@@ -91,7 +100,12 @@ def main():
 
     hostname = get_hostname(args.url)
     
-    print(f"Analyse de l'hôte : {hostname}")
+    print(f"Vérification de l'existence de l'hôte : {hostname}")
+    if not check_host_exists(hostname):
+        print(f"Erreur : L'hôte '{hostname}' est introuvable. Veuillez vérifier le nom de domaine.")
+        sys.exit(1)
+    
+    print(f"Hôte trouvé. Début de l'analyse de : {hostname}")
     check_ssl_certificate(hostname)
     check_security_headers(hostname)
 
