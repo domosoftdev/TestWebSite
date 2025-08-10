@@ -1,3 +1,5 @@
 requests
 sslyze
 dnspython
+beautifulsoup4
+lxml
