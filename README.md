@@ -11,31 +11,18 @@ Ce script Python analyse une URL donnée pour évaluer certains aspects de sa co
 Le script effectue actuellement les vérifications suivantes :
 
 1.  **Vérification de la chaîne de confiance et de l'expiration du certificat SSL/TLS**
-    *   C'est le point de départ. Si le certificat est invalide ou expiré, tout le reste est compromis. Un certificat non valide empêche la connexion sécurisée, ce qui expose les données des utilisateurs. Le vérifier en premier garantit que la communication entre le client et le serveur est sécurisée.
-
-2.  **Analyse des en-têtes de sécurité HTTP (Strict-Transport-Security, X-Frame-Options, X-Content-Type-Options)**
-    *   Ces en-têtes sont des mesures de sécurité défensives très efficaces et faciles à implémenter.
-    *   **Strict-Transport-Security (HSTS)** force le navigateur à n'utiliser que des connexions HTTPS pour ce site, ce qui réduit le risque de man-in-the-middle.
-    *   **X-Frame-Options** et **Content-Security-Policy (CSP)** protègent contre le clickjacking et l'injection de contenu malveillant en contrôlant comment le site peut être intégré dans d'autres pages.
-    *   **X-Content-Type-Options** empêche les navigateurs d'interpréter le code de manière incorrecte, ce qui protège contre certaines attaques.
-
+2.  **Analyse des en-têtes de sécurité HTTP (HSTS, X-Frame-Options, etc.)**
 3.  **Redirections HTTP vers HTTPS**
-    *   Une fois que vous savez que le certificat est valide, assurez-vous que toutes les requêtes non chiffrées sont automatiquement redirigées vers la version sécurisée du site. Si ce n'est pas le cas, un attaquant peut intercepter les premières requêtes des utilisateurs sur une connexion non chiffrée.
-
 4.  **Scan des versions de protocoles SSL/TLS supportées**
-    *   Le script scanne activement le serveur pour déterminer quelles versions de protocoles (de SSL 2.0 à TLS 1.3) sont activées. Il signale les protocoles obsolètes et vulnérables (SSLv2, SSLv3, TLS 1.0, TLS 1.1) comme étant non conformes, car leur utilisation expose à des risques de sécurité connus.
-
-5.  **Vérification des enregistrements DNS de sécurité (A, MX, NS, DMARC, SPF)**
-    *   Le script vérifie les enregistrements DNS fondamentaux (A, MX, NS) et ceux liés à la sécurité des e-mails (DMARC, SPF). Il fournit des conseils de correction si les enregistrements DMARC ou SPF sont manquants.
-
-6.  **Analyse des attributs de cookies (HttpOnly, Secure, SameSite)**
-    *   Des cookies mal configurés peuvent être volés, ce qui expose les sessions des utilisateurs. S'assurer qu'ils sont marqués `HttpOnly` (pour empêcher l'accès via JavaScript), `Secure` (pour forcer le chiffrement) et `SameSite` (pour prévenir les attaques CSRF) protège contre de nombreuses menaces.
+5.  **Vérification des enregistrements DNS de sécurité (DMARC, SPF)**
+6.  **Analyse des attributs de sécurité des cookies**
+7.  **Identification du bureau d'enregistrement (Registrar)**
 
 ## Installation
 
 1.  Assurez-vous d'avoir Python 3 installé sur votre système.
-2.  Clonez ce dépôt ou téléchargez les fichiers `security_checker.py` et `requirements.txt`.
-3.  Installez les dépendances nécessaires en utilisant pip :
+2.  Clonez ce dépôt ou téléchargez les fichiers.
+3.  Installez les dépendances :
 
     ```bash
     pip install -r requirements.txt
@@ -43,27 +30,53 @@ Le script effectue actuellement les vérifications suivantes :
 
 ## Utilisation
 
-Pour analyser un site web, exécutez le script depuis votre terminal en lui passant l'URL ou le nom de domaine comme argument.
+Pour analyser un site web, exécutez le script depuis votre terminal :
 
 ```bash
 python3 security_checker.py google.com
 ```
 
-### Exemple de sortie
+### Générer un rapport
+
+Vous pouvez sauvegarder la sortie de l'analyse dans un fichier en utilisant `--rapport`.
+
+#### 1. Rapport au format Texte
+
+C'est le format par défaut.
+
+- **Nom de fichier personnalisé :**
+  ```bash
+  python3 security_checker.py google.com --rapport rapport_google.txt
+  ```
+
+- **Nom de fichier automatique :**
+  ```bash
+  python3 security_checker.py google.com --rapport
+  ```
+  (créera `google.com_jjmmaa.txt`)
+
+#### 2. Rapport au format JSON
+
+Utilisez l'option `--format json` pour un rapport structuré, idéal pour l'automatisation.
+
+- **Nom de fichier personnalisé :**
+  ```bash
+  python3 security_checker.py google.com --rapport rapport.json --format json
+  ```
+
+- **Nom de fichier automatique :**
+  ```bash
+  python3 security_checker.py google.com --rapport --format json
+  ```
+  (créera `google.com_jjmmaa.json`)
+
+### Exemple de sortie Console
 
 ```
-Analyse de l'hôte : google.com
+Analyse de : google.com
 
 --- Analyse du certificat SSL/TLS ---
   Sujet du certificat : *.google.com
-  Émetteur : WR2
-  Date d'expiration : 2025-09-29
-  Le certificat est valide.
-
---- Analyse des en-têtes de sécurité HTTP ---
-  Analyse des en-têtes pour l'URL finale : https://www.google.com/
-
-  En-têtes de sécurité trouvés :
-    - Content-Security-Policy-Report-Only: Trouvé
-    - X-Frame-Options: Trouvé
+  Émetteur : GTS CA 1P5
+...
 ```
