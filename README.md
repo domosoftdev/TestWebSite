@@ -8,75 +8,85 @@ Ce script Python analyse une URL donnée pour évaluer certains aspects de sa co
 
 ## Fonctionnalités
 
-Le script effectue actuellement les vérifications suivantes :
+Le script effectue les vérifications suivantes :
 
-1.  **Vérification de la chaîne de confiance et de l'expiration du certificat SSL/TLS**
-2.  **Analyse des en-têtes de sécurité HTTP (HSTS, X-Frame-Options, etc.)**
-3.  **Redirections HTTP vers HTTPS**
-4.  **Scan des versions de protocoles SSL/TLS supportées**
-5.  **Vérification des enregistrements DNS de sécurité (DMARC, SPF)**
-6.  **Analyse des attributs de sécurité des cookies**
-7.  **Identification du bureau d'enregistrement (Registrar)**
+1.  **Analyse SSL/TLS** : Vérification de la validité du certificat et scan des protocoles supportés (de SSLv2 à TLS 1.3).
+2.  **Analyse des En-têtes HTTP** : Recherche des en-têtes de sécurité fondamentaux (HSTS, X-Frame-Options, CSP, etc.).
+3.  **Analyse de la Redirection** : S'assure que le site redirige bien de HTTP vers HTTPS.
+4.  **Sécurité des Cookies** : Vérifie la présence des attributs `Secure`, `HttpOnly` et `SameSite`.
+5.  **Sécurité DNS** : Contrôle la présence et la configuration des enregistrements `A`, `MX`, `NS`, `DMARC` et `SPF`.
+6.  **Empreinte Technologique (Footprinting)** :
+    *   Détecte les technologies du serveur web (ex: `nginx`, `Apache`) via les en-têtes HTTP.
+    *   Identifie les CMS (ex: `WordPress`, `Joomla`) en analysant les balises `<meta>` et en testant des chemins connus (`/wp-admin`, etc.).
+7.  **Rapports Flexibles** :
+    *   Affiche un rapport clair et lisible directement dans la console.
+    *   Génère un rapport détaillé au format **JSON** pour une intégration facile avec d'autres outils.
 
 ## Installation
 
-1.  Assurez-vous d'avoir Python 3 installé sur votre système.
+1.  Assurez-vous d'avoir Python 3 et pip installés.
 2.  Clonez ce dépôt ou téléchargez les fichiers.
 3.  Installez les dépendances :
-
     ```bash
     pip install -r requirements.txt
     ```
 
 ## Utilisation
 
-Pour analyser un site web, exécutez le script depuis votre terminal :
+### Analyse de base
 
+Pour lancer une analyse et afficher les résultats dans la console :
 ```bash
-python3 security_checker.py google.com
+python3 security_checker.py exemple.com
 ```
 
-### Générer un rapport
+### Génération d'un rapport JSON
 
-Vous pouvez sauvegarder la sortie de l'analyse dans un fichier en utilisant `--rapport`.
+Pour générer un rapport JSON en plus de l'affichage console, utilisez l'argument `--rapport`.
 
-#### 1. Rapport au format Texte
-
-C'est le format par défaut.
-
-- **Nom de fichier personnalisé :**
-  ```bash
-  python3 security_checker.py google.com --rapport rapport_google.txt
-  ```
-
-- **Nom de fichier automatique :**
-  ```bash
-  python3 security_checker.py google.com --rapport
-  ```
-  (créera `google.com_jjmmaa.txt`)
-
-#### 2. Rapport au format JSON
-
-Utilisez l'option `--format json` pour un rapport structuré, idéal pour l'automatisation.
-
-- **Nom de fichier personnalisé :**
-  ```bash
-  python3 security_checker.py google.com --rapport rapport.json --format json
-  ```
-
-- **Nom de fichier automatique :**
-  ```bash
-  python3 security_checker.py google.com --rapport --format json
-  ```
-  (créera `google.com_jjmmaa.json`)
-
-### Exemple de sortie Console
-
+**1. Avec un nom de fichier par défaut :**
+Le nom du fichier sera généré automatiquement (ex: `exemple.com_100825.json`).
+```bash
+python3 security_checker.py exemple.com --rapport
 ```
-Analyse de : google.com
+
+**2. Avec un nom de fichier spécifique :**
+```bash
+python3 security_checker.py exemple.com --rapport mon_rapport.json
+```
+
+### Exemple de sortie
+
+La nouvelle sortie console est améliorée pour une meilleure lisibilité :
+```
+ Hôte analysé : google.com
+========================================
 
 --- Analyse du certificat SSL/TLS ---
-  Sujet du certificat : *.google.com
-  Émetteur : GTS CA 1P5
-...
+  ✅ Le certificat est valide.
+    Sujet    : *.google.com
+    Émetteur : WR2
+    Expire le: 2025-09-29
+
+--- Scan des protocoles SSL/TLS supportés ---
+  ✅ SSL 2.0 : Non supporté (CONFORME)
+  ❌ TLS 1.0 : Supporté (NON CONFORME - Vulnérable)
+  ✅ TLS 1.3 : Supporté (CONFORME)
+
+--- Analyse de la redirection HTTP vers HTTPS ---
+  ❌ Le site redirige, mais pas directement vers HTTPS (vers: http://www.google.com/).
+
+--- Analyse des en-têtes de sécurité HTTP ---
+  URL finale analysée : https://www.google.com/
+
+  [Empreinte Technologique]
+    ℹ️ Serveur Web : gws
+
+  [En-têtes de sécurité]
+    ❌ Hsts : En-tête manquant.
+    ✅ X-Frame-Options : SAMEORIGIN
+
+--- Analyse d'empreinte CMS ---
+  ℹ️ [Meta Generator] Aucune balise meta 'generator' trouvée.
+  ℹ️ [Chemins Connus] Aucun chemin spécifique à un CMS commun n'a été trouvé.
 ```

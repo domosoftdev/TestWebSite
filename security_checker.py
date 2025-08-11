@@ -68,20 +68,21 @@ def check_ssl_certificate(hostname):
                     "date_expiration": exp_date.strftime('%Y-%m-%d'),
                 }
                 if exp_date < datetime.now():
-                    result.update({"statut": "ERROR", "message": "Le certificat a expiré.", "criticite": "CRITICAL"})
+                    result.update({"statut": "ERROR", "message": "Le certificat a expiré.", "criticite": "CRITICAL", "remediation": "Renouvelez votre certificat SSL/TLS immédiatement."})
                 else:
                     result.update({"statut": "SUCCESS", "message": "Le certificat est valide.", "criticite": "INFO"})
                 return result
     except ssl.SSLCertVerificationError as e:
-        return {"statut": "ERROR", "message": f"La vérification du certificat a échoué ({e.reason}).", "criticite": "HIGH"}
+        return {"statut": "ERROR", "message": f"La vérification du certificat a échoué ({e.reason}).", "criticite": "HIGH", "remediation": "Vérifiez que votre chaîne de certificats est complète (certificats intermédiaires) et que le certificat n'est pas auto-signé."}
     except socket.timeout:
-        return {"statut": "ERROR", "message": "La connexion au serveur a échoué (timeout).", "criticite": "HIGH"}
+        return {"statut": "ERROR", "message": "La connexion au serveur a échoué (timeout).", "criticite": "HIGH", "remediation": "Assurez-vous que le port 443 est ouvert et accessible."}
     except Exception as e:
         return {"statut": "ERROR", "message": f"Erreur inattendue lors de la vérification du certificat : {e}", "criticite": "HIGH"}
 
 def scan_tls_protocols(hostname):
     """Scanne les protocoles SSL/TLS supportés et retourne une liste de résultats."""
     results = []
+    remediation_text = "Désactivez les protocoles SSL/TLS obsolètes sur votre serveur. Pour Nginx, utilisez 'ssl_protocols TLSv1.2 TLSv1.3;'. Pour Apache, 'SSLProtocol all -SSLv3 -TLSv1 -TLSv1.1'."
     try:
         server_location = ServerNetworkLocation(hostname=hostname, port=443)
         scan_request = ServerScanRequest(
@@ -107,7 +108,9 @@ def scan_tls_protocols(hostname):
                 if scan.status == ScanCommandAttemptStatusEnum.ERROR: continue
                 if scan.result.accepted_cipher_suites:
                     crit = "HIGH" if name in ["SSL 2.0", "SSL 3.0", "TLS 1.0", "TLS 1.1"] else "INFO"
-                    results.append({"protocole": name, "statut": "ERROR" if crit == "HIGH" else "SUCCESS", "message": "Supporté", "criticite": crit})
+                    res = {"protocole": name, "statut": "ERROR" if crit == "HIGH" else "SUCCESS", "message": "Supporté", "criticite": crit}
+                    if crit == "HIGH": res["remediation"] = remediation_text
+                    results.append(res)
                 else:
                     results.append({"protocole": name, "statut": "SUCCESS", "message": "Non supporté", "criticite": "INFO"})
             return results
@@ -116,11 +119,12 @@ def scan_tls_protocols(hostname):
 
 def check_http_to_https_redirect(hostname):
     """Vérifie si le site redirige automatiquement de HTTP vers HTTPS."""
+    remediation_text = "Configurez votre serveur web pour forcer la redirection de tout le trafic HTTP vers HTTPS. Pour Nginx: 'return 301 https://$host$request_uri;'."
     try:
         response = requests.get(f"http://{hostname}", allow_redirects=False, timeout=10)
         if 300 <= response.status_code < 400 and response.headers.get('Location', '').startswith('https://'):
             return {"statut": "SUCCESS", "message": "Redirection correcte vers HTTPS.", "criticite": "INFO"}
-        return {"statut": "ERROR", "message": "La redirection de HTTP vers HTTPS n'est pas correctement configurée.", "criticite": "MEDIUM"}
+        return {"statut": "ERROR", "message": "La redirection de HTTP vers HTTPS n'est pas correctement configurée.", "criticite": "MEDIUM", "remediation": remediation_text}
     except Exception as e:
         return {"statut": "ERROR", "message": f"Erreur lors du test de redirection: {e}", "criticite": "HIGH"}
 
@@ -132,14 +136,14 @@ def check_email_security_dns(hostname):
         dmarc_rec = ' '.join([b.decode() for b in dmarc_ans[0].strings])
         results['dmarc'] = {"statut": "SUCCESS", "valeur": dmarc_rec, "criticite": "INFO"}
     except Exception:
-        results['dmarc'] = {"statut": "ERROR", "message": "Aucun enregistrement DMARC trouvé.", "criticite": "HIGH"}
+        results['dmarc'] = {"statut": "ERROR", "message": "Aucun enregistrement DMARC trouvé.", "criticite": "HIGH", "remediation": "Ajoutez un enregistrement DMARC à votre zone DNS pour protéger contre l'usurpation d'e-mail."}
     try:
         txt_ans = dns.resolver.resolve(hostname, 'TXT')
         spf_rec = next((s for s in [' '.join([b.decode() for r in txt_ans]) for r in txt_ans] if s.startswith('v=spf1')), None)
         if spf_rec:
             results['spf'] = {"statut": "SUCCESS", "valeur": spf_rec, "criticite": "INFO"}
         else:
-            results['spf'] = {"statut": "ERROR", "message": "Aucun enregistrement SPF trouvé.", "criticite": "HIGH"}
+            results['spf'] = {"statut": "ERROR", "message": "Aucun enregistrement SPF trouvé.", "criticite": "HIGH", "remediation": "Ajoutez un enregistrement SPF à votre zone DNS pour spécifier les serveurs autorisés à envoyer des e-mails pour votre domaine."}
     except Exception:
         results['spf'] = {"statut": "ERROR", "message": "Aucun enregistrement TXT trouvé.", "criticite": "HIGH"}
     return results
@@ -158,12 +162,15 @@ def check_cookie_security(hostname):
             cookie_name = parts[0].split('=')[0]
             attributes = set(parts[1:])
             
-            results.append({
-                "nom": cookie_name,
-                "secure": {"present": 'secure' in attributes, "criticite": "INFO" if 'secure' in attributes else "HIGH"},
-                "httponly": {"present": 'httponly' in attributes, "criticite": "INFO" if 'httponly' in attributes else "MEDIUM"},
-                "samesite": {"present": any(a.startswith('samesite=') for a in attributes), "criticite": "INFO" if any(a.startswith('samesite=') for a in attributes) else "MEDIUM"}
-            })
+            cookie_res = {"nom": cookie_name}
+            secure_ok = 'secure' in attributes
+            httponly_ok = 'httponly' in attributes
+            samesite_ok = any(a.startswith('samesite=') for a in attributes)
+
+            cookie_res["secure"] = {"present": secure_ok, "criticite": "INFO" if secure_ok else "HIGH", "remediation": "Ajoutez l'attribut 'Secure' à vos cookies."}
+            cookie_res["httponly"] = {"present": httponly_ok, "criticite": "INFO" if httponly_ok else "MEDIUM", "remediation": "Ajoutez l'attribut 'HttpOnly' pour empêcher l'accès aux cookies via JavaScript."}
+            cookie_res["samesite"] = {"present": samesite_ok, "criticite": "INFO" if samesite_ok else "MEDIUM", "remediation": "Ajoutez l'attribut 'SameSite=Strict' ou 'SameSite=Lax' pour protéger contre les attaques CSRF."}
+            results.append(cookie_res)
         return results
     except Exception as e:
         return [{"statut": "ERROR", "message": f"Erreur lors de la récupération des cookies: {e}", "criticite": "HIGH"}]
@@ -176,35 +183,33 @@ def check_security_headers(hostname):
         headers = {k.lower(): v for k, v in response.headers.items()}
         results['url_finale'] = response.url
 
-        # Footprinting
         for h in ['server', 'x-powered-by', 'x-aspnet-version']:
             if h in headers:
-                results['empreinte'].append({"header": h, "valeur": headers[h], "criticite": "LOW"})
+                results['empreinte'].append({"header": h, "valeur": headers[h], "criticite": "LOW", "remediation": f"Supprimez l'en-tête '{h}' de vos réponses HTTP pour ne pas divulguer d'informations sur votre infrastructure."})
 
-        # Security Headers
         hsts_header = headers.get('strict-transport-security')
         if hsts_header and 'max-age' in hsts_header and int(hsts_header.split('max-age=')[1].split(';')[0]) >= 15552000:
-            results['en-tetes_securite']['hsts'] = {"statut": "SUCCESS", "valeur": hsts_header, "criticite": "INFO"}
+            results['en-tetes_securite']['hsts'] = {"statut": "SUCCESS", "criticite": "INFO"}
         else:
-            results['en-tetes_securite']['hsts'] = {"statut": "ERROR", "message": "En-tête HSTS manquant ou avec un max-age trop court.", "criticite": "HIGH"}
+            results['en-tetes_securite']['hsts'] = {"statut": "ERROR", "criticite": "HIGH", "remediation": "Implémentez l'en-tête HSTS avec un 'max-age' d'au moins 6 mois. Exemple pour Nginx: add_header Strict-Transport-Security 'max-age=15552000; includeSubDomains';"}
 
         xfo_header = headers.get('x-frame-options', '').upper()
         if xfo_header in ['DENY', 'SAMEORIGIN']:
-            results['en-tetes_securite']['x-frame-options'] = {"statut": "SUCCESS", "valeur": xfo_header, "criticite": "INFO"}
+            results['en-tetes_securite']['x-frame-options'] = {"statut": "SUCCESS", "criticite": "INFO"}
         else:
-            results['en-tetes_securite']['x-frame-options'] = {"statut": "ERROR", "message": "En-tête X-Frame-Options manquant ou mal configuré.", "criticite": "MEDIUM"}
+            results['en-tetes_securite']['x-frame-options'] = {"statut": "ERROR", "criticite": "MEDIUM", "remediation": "Ajoutez l'en-tête 'X-Frame-Options: SAMEORIGIN' ou 'DENY' pour vous protéger du clickjacking."}
 
         xcto_header = headers.get('x-content-type-options', '').lower()
         if xcto_header == 'nosniff':
-            results['en-tetes_securite']['x-content-type-options'] = {"statut": "SUCCESS", "valeur": xcto_header, "criticite": "INFO"}
+            results['en-tetes_securite']['x-content-type-options'] = {"statut": "SUCCESS", "criticite": "INFO"}
         else:
-            results['en-tetes_securite']['x-content-type-options'] = {"statut": "ERROR", "message": "En-tête X-Content-Type-Options manquant ou mal configuré.", "criticite": "MEDIUM"}
+            results['en-tetes_securite']['x-content-type-options'] = {"statut": "ERROR", "criticite": "MEDIUM", "remediation": "Ajoutez l'en-tête 'X-Content-Type-Options: nosniff'."}
 
         csp_header = headers.get('content-security-policy')
         if csp_header:
-            results['en-tetes_securite']['csp'] = {"statut": "SUCCESS", "valeur": csp_header, "criticite": "INFO"}
+            results['en-tetes_securite']['csp'] = {"statut": "SUCCESS", "criticite": "INFO"}
         else:
-            results['en-tetes_securite']['csp'] = {"statut": "WARNING", "message": "En-tête manquant.", "criticite": "LOW"}
+            results['en-tetes_securite']['csp'] = {"statut": "WARNING", "criticite": "LOW", "remediation": "Envisagez d'implémenter une Content Security Policy (CSP) pour une défense en profondeur contre les attaques XSS."}
             
         return results
     except Exception as e:
@@ -290,6 +295,8 @@ def print_human_readable_report(results):
     print(f"  {icon} {crit_str(criticite)} {ssl_cert.get('message', 'Aucune donnée.')}")
     if ssl_cert.get('statut') == "SUCCESS":
         print(f"    Sujet    : {ssl_cert.get('sujet')}\n    Émetteur : {ssl_cert.get('emetteur')}\n    Expire le: {ssl_cert.get('date_expiration')}")
+    if 'remediation' in ssl_cert:
+        print(f"    -> Action : {ssl_cert['remediation']}")
 
     # Protocoles TLS
     print("\n--- Scan des protocoles SSL/TLS supportés ---")
@@ -297,6 +304,8 @@ def print_human_readable_report(results):
         icon = STATUS_ICONS.get(proto.get('statut'), '❓')
         criticite = proto.get('criticite', '')
         print(f"  {icon} {crit_str(criticite)} {proto.get('protocole', '')} : {proto.get('message', '')}")
+        if 'remediation' in proto:
+            print(f"    -> Action : {proto['remediation']}")
 
     # Redirection HTTP
     print("\n--- Analyse de la redirection HTTP vers HTTPS ---")
@@ -304,6 +313,8 @@ def print_human_readable_report(results):
     icon = STATUS_ICONS.get(redirect.get('statut'), '❓')
     criticite = redirect.get('criticite', '')
     print(f"  {icon} {crit_str(criticite)} {redirect.get('message', 'Aucune donnée.')}")
+    if 'remediation' in redirect:
+        print(f"    -> Action : {redirect['remediation']}")
 
     # En-têtes de sécurité
     print("\n--- Analyse des en-têtes de sécurité HTTP ---")
@@ -315,11 +326,15 @@ def print_human_readable_report(results):
         print(f"  [Empreinte Technologique]")
         for fp in headers.get('empreinte', []):
             print(f"    {STATUS_ICONS['INFO']} {crit_str(fp.get('criticite'))} {fp.get('header', '').title()} : {fp.get('valeur')}")
+            if 'remediation' in fp:
+                print(f"      -> Action : {fp['remediation']}")
         print("\n  [En-têtes de sécurité]")
         for name, data in headers.get('en-tetes_securite', {}).items():
             icon = STATUS_ICONS.get(data.get('statut'), '❓')
             message = data.get('valeur') if data.get('statut') == 'SUCCESS' else data.get('message')
             print(f"    {icon} {crit_str(data.get('criticite'))} {name.replace('_', '-').title()} : {message}")
+            if 'remediation' in data:
+                print(f"      -> Action : {data['remediation']}")
 
     # Sécurité des Cookies
     print("\n--- Analyse de la sécurité des cookies ---")
@@ -332,7 +347,10 @@ def print_human_readable_report(results):
             for name in ['secure', 'httponly', 'samesite']:
                 attr = cookie.get(name, {})
                 icon = "✅" if attr.get('present') else "❌"
-                print(f"    {icon} {crit_str(attr.get('criticite'))} {name.title()} : {'Présent' if attr.get('present') else 'Manquant'}")
+                status_text = 'Présent' if attr.get('present') else 'Manquant'
+                print(f"    {icon} {crit_str(attr.get('criticite'))} {name.title()} : {status_text}")
+                if not attr.get('present') and 'remediation' in attr:
+                    print(f"      -> Action : {attr['remediation']}")
 
     # Empreinte CMS
     print("\n--- Analyse d'empreinte CMS ---")
