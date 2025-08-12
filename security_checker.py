@@ -191,15 +191,41 @@ def check_http_to_https_redirect(hostname):
     except Exception as e:
         return {"statut": "ERROR", "message": f"Erreur lors du test de redirection: {e}", "criticite": "HIGH"}
 
-def check_email_security_dns(hostname):
-    """Vérifie la présence des enregistrements DNS de sécurité et retourne un dictionnaire de résultats."""
+def check_dns_records(hostname):
+    """Vérifie les enregistrements DNS clés (NS, A, MX) et de sécurité (DMARC, SPF)."""
     results = {}
+
+    # NS Records
+    try:
+        ns_ans = dns.resolver.resolve(hostname, 'NS')
+        results['ns'] = {"statut": "SUCCESS", "valeurs": [str(r.target) for r in ns_ans], "criticite": "INFO"}
+    except Exception as e:
+        results['ns'] = {"statut": "ERROR", "message": f"Impossible de récupérer les enregistrements NS ({e})", "criticite": "LOW"}
+
+    # A Records
+    try:
+        a_ans = dns.resolver.resolve(hostname, 'A')
+        results['a'] = {"statut": "SUCCESS", "valeurs": [r.address for r in a_ans], "criticite": "INFO"}
+    except Exception as e:
+        results['a'] = {"statut": "ERROR", "message": f"Impossible de récupérer les enregistrements A ({e})", "criticite": "LOW"}
+
+    # MX Records
+    try:
+        mx_ans = dns.resolver.resolve(hostname, 'MX')
+        mx_records = sorted([(r.preference, str(r.exchange)) for r in mx_ans])
+        results['mx'] = {"statut": "SUCCESS", "valeurs": [f"Prio {p}: {e}" for p, e in mx_records], "criticite": "INFO"}
+    except Exception as e:
+        results['mx'] = {"statut": "ERROR", "message": f"Impossible de récupérer les enregistrements MX ({e})", "criticite": "LOW"}
+
+    # DMARC Record
     try:
         dmarc_ans = dns.resolver.resolve(f"_dmarc.{hostname}", 'TXT')
         dmarc_rec = ' '.join([b.decode() for b in dmarc_ans[0].strings])
         results['dmarc'] = {"statut": "SUCCESS", "valeur": dmarc_rec, "criticite": "INFO"}
     except Exception:
         results['dmarc'] = {"statut": "ERROR", "message": "Aucun enregistrement DMARC trouvé.", "criticite": "HIGH", "remediation_id": "DMARC_MISSING"}
+
+    # SPF Record
     try:
         txt_ans = dns.resolver.resolve(hostname, 'TXT')
         spf_rec = next((s for s in [' '.join([b.decode() for r in txt_ans]) for r in txt_ans] if s.startswith('v=spf1')), None)
@@ -209,6 +235,7 @@ def check_email_security_dns(hostname):
             results['spf'] = {"statut": "ERROR", "message": "Aucun enregistrement SPF trouvé.", "criticite": "HIGH", "remediation_id": "SPF_MISSING"}
     except Exception:
         results['spf'] = {"statut": "ERROR", "message": "Aucun enregistrement TXT trouvé.", "criticite": "HIGH"}
+
     return results
 
 def check_cookie_security(hostname):
@@ -467,12 +494,34 @@ def print_human_readable_report(results):
                 if not attr.get('present'):
                     print_remediation(attr)
 
-    # Sécurité DNS
-    print("\n--- Analyse des enregistrements DNS et de sécurité e-mail ---")
-    dns_results = results.get('dns_security', {})
-    for name, data in dns_results.items():
+    # Analyse DNS
+    print("\n--- Analyse des enregistrements DNS ---")
+    dns_results = results.get('dns_records', {})
+
+    dns_order = [
+        ('ns', 'Serveurs de noms (NS)'),
+        ('a', 'Adresses IP (A)'),
+        ('mx', 'Serveurs de messagerie (MX)'),
+        ('dmarc', 'Enregistrement DMARC'),
+        ('spf', 'Enregistrement SPF')
+    ]
+
+    for key, title in dns_order:
+        data = dns_results.get(key)
+        if not data: continue
+
+        print(f"\n  {title} :")
         icon = STATUS_ICONS.get(data.get('statut'), '❓')
-        print(f"  {icon} {crit_str(data.get('criticite'))} {name.upper()} : {data.get('valeur', data.get('message', ''))}")
+
+        if data.get('statut') == 'SUCCESS':
+            if 'valeurs' in data: # Pour NS, A, MX qui ont une liste
+                for val in data['valeurs']:
+                    print(f"    {icon} {val}")
+            elif 'valeur' in data: # Pour DMARC, SPF qui ont une valeur unique
+                print(f"    {icon} {data['valeur']}")
+        else: # En cas d'erreur
+            print(f"    {icon} {crit_str(data.get('criticite'))} {data.get('message', 'Erreur inconnue.')}")
+
         print_remediation(data)
 
     # Bibliothèques JS
@@ -537,9 +586,9 @@ def main():
     all_results['cookie_security'] = check_cookie_security(hostname)
     all_results['cms_footprint_meta'] = check_cms_footprint(hostname)
     all_results['cms_footprint_paths'] = check_cms_paths(hostname)
-    all_results['dns_security'] = check_email_security_dns(hostname)
+    all_results['dns_records'] = check_dns_records(hostname)
     all_results['js_libraries'] = check_js_libraries(hostname)
-    
+
     # Calcul du score final
     score, grade = calculate_score(all_results)
     all_results['score_final'] = score
