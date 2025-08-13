@@ -3,3 +3,4 @@ sslyze
 dnspython
 beautifulsoup4
 lxml
+packaging

@@ -1,0 +1,121 @@
+{
+    "hostname": "example.com",
+    "ssl_certificate": {
+        "sujet": "*.example.com",
+        "emetteur": "DigiCert Global G3 TLS ECC SHA384 2020 CA1",
+        "date_expiration": "2026-01-15",
+        "statut": "SUCCESS",
+        "message": "Le certificat est valide.",
+        "criticite": "INFO"
+    },
+    "tls_protocols": [
+        {
+            "statut": "ERROR",
+            "message": "Impossible de se connecter à example.com pour le scan TLS.",
+            "criticite": "HIGH"
+        }
+    ],
+    "http_redirect": {
+        "statut": "ERROR",
+        "message": "La redirection de HTTP vers HTTPS n'est pas correctement configurée.",
+        "criticite": "MEDIUM",
+        "remediation_id": "NO_HTTPS_REDIRECT"
+    },
+    "security_headers": {
+        "empreinte": [],
+        "en-tetes_securite": {
+            "hsts": {
+                "statut": "ERROR",
+                "criticite": "HIGH",
+                "remediation_id": "HSTS_MISSING"
+            },
+            "x-frame-options": {
+                "statut": "ERROR",
+                "criticite": "MEDIUM",
+                "remediation_id": "XFO_MISSING"
+            },
+            "x-content-type-options": {
+                "statut": "ERROR",
+                "criticite": "MEDIUM",
+                "remediation_id": "XCTO_MISSING"
+            },
+            "csp": {
+                "statut": "WARNING",
+                "criticite": "LOW",
+                "remediation_id": "CSP_MISSING"
+            }
+        },
+        "url_finale": "https://example.com/"
+    },
+    "cookie_security": [
+        {
+            "statut": "INFO",
+            "message": "Aucun cookie n'a été défini par le serveur.",
+            "criticite": "INFO"
+        }
+    ],
+    "cms_footprint_meta": {
+        "statut": "INFO",
+        "message": "Aucune balise meta 'generator' trouvée.",
+        "criticite": "INFO"
+    },
+    "cms_footprint_paths": [],
+    "dns_records": {
+        "ns": {
+            "statut": "SUCCESS",
+            "valeurs": [
+                "b.iana-servers.net.",
+                "a.iana-servers.net."
+            ],
+            "criticite": "INFO"
+        },
+        "a": {
+            "statut": "SUCCESS",
+            "valeurs": [
+                "23.192.228.84",
+                "23.192.228.80",
+                "96.7.128.198",
+                "23.215.0.138",
+                "96.7.128.175",
+                "23.215.0.136"
+            ],
+            "criticite": "INFO"
+        },
+        "mx": {
+            "statut": "SUCCESS",
+            "valeurs": [
+                "Prio 0: ."
+            ],
+            "criticite": "INFO"
+        },
+        "dmarc": {
+            "statut": "SUCCESS",
+            "valeur": "v=DMARC1;p=reject;sp=reject;adkim=s;aspf=s",
+            "criticite": "INFO"
+        },
+        "spf": {
+            "statut": "ERROR",
+            "message": "Aucun enregistrement TXT trouvé.",
+            "criticite": "HIGH"
+        }
+    },
+    "js_libraries": [
+        {
+            "bibliotheque": "jquery",
+            "version_detectee": "1.12.4",
+            "derniere_version": "3.7.1",
+            "vulnerabilities": [
+                {
+                    "id": "CVE-2020-11022",
+                    "summary": "Cross-site Scripting (XSS) in jQuery",
+                    "details": "A fake vulnerability for testing purposes."
+                }
+            ],
+            "statut": "WARNING",
+            "criticite": "HIGH",
+            "remediation_id": "JS_LIB_OBSOLETE"
+        }
+    ],
+    "score_final": 41,
+    "note": "D"
+}
