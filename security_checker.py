@@ -12,6 +12,7 @@ import ssl
 import sys
 import urllib.parse
 import requests
+import json
 from datetime import datetime
 from sslyze import (
     Scanner,
@@ -23,6 +24,15 @@ from sslyze import (
 from sslyze.errors import ServerHostnameCouldNotBeResolved
 from sslyze.plugins.scan_commands import ScanCommand
 import dns.resolver
+from bs4 import BeautifulSoup
+
+SEVERITY_SCORES = {
+    "CRITICAL": 10,
+    "HIGH": 7,
+    "MEDIUM": 4,
+    "LOW": 1,
+    "INFO": 0
+}
 
 def check_host_exists(hostname):
     """Vérifie si un nom d'hôte existe via une résolution DNS."""
@@ -43,13 +53,13 @@ def get_hostname(url):
     return url
 
 def check_ssl_certificate(hostname):
-    """Vérifie le certificat SSL/TLS d'un hôte."""
-    print("\n--- Analyse du certificat SSL/TLS ---")
+    """Vérifie le certificat SSL/TLS d'un hôte et retourne un dictionnaire de résultats."""
     context = ssl.create_default_context()
     try:
         with socket.create_connection((hostname, 443), timeout=5) as sock:
             with context.wrap_socket(sock, server_hostname=hostname) as ssock:
                 cert = ssock.getpeercert()
+
 
                 subject = dict(x[0] for x in cert['subject'])
                 issuer = dict(x[0] for x in cert.get('issuer', []))
@@ -61,9 +71,11 @@ def check_ssl_certificate(hostname):
                 exp_date = datetime.strptime(exp_date_str, '%b %d %H:%M:%S %Y %Z')
                 print(f"  Date d'expiration : {exp_date.strftime('%Y-%m-%d')}")
 
+
                 if exp_date < datetime.now():
-                    print("  ATTENTION : Le certificat a expiré !")
+                    result.update({"statut": "ERROR", "message": "Le certificat a expiré.", "criticite": "CRITICAL", "remediation": "Renouvelez votre certificat SSL/TLS immédiatement."})
                 else:
+
                     print("  Le certificat est valide.")
 
     except ssl.SSLCertVerificationError as e:
@@ -99,20 +111,19 @@ def check_ssl_certificate(hostname):
 
         except Exception as inner_e:
             print(f"    Impossible de récupérer les détails du certificat non approuvé : {inner_e}")
-    except socket.timeout:
-        print("  ERREUR : La connexion au serveur a échoué (timeout).")
-        print("    Cause probable : Le serveur ne répond pas sur le port 443, ou un pare-feu bloque la connexion.")
-    except Exception as e:
-        print(f"  Erreur inattendue lors de la vérification du certificat : {e}")
 
-    print(f"\n  Pour une analyse SSL/TLS complète, consultez le rapport SSL Labs :")
-    print(f"  https://www.ssllabs.com/ssltest/analyze.html?d={hostname}")
+    except socket.timeout:
+        return {"statut": "ERROR", "message": "La connexion au serveur a échoué (timeout).", "criticite": "HIGH", "remediation": "Assurez-vous que le port 443 est ouvert et accessible."}
+    except Exception as e:
+        return {"statut": "ERROR", "message": f"Erreur inattendue lors de la vérification du certificat : {e}", "criticite": "HIGH"}
 
 def scan_tls_protocols(hostname):
-    """Scanne les protocoles SSL/TLS supportés en utilisant sslyze."""
-    print("\n--- Scan des protocoles SSL/TLS supportés ---")
+    """Scanne les protocoles SSL/TLS supportés et retourne une liste de résultats."""
+    results = []
+    remediation_text = "Désactivez les protocoles SSL/TLS obsolètes sur votre serveur. Pour Nginx, utilisez 'ssl_protocols TLSv1.2 TLSv1.3;'. Pour Apache, 'SSLProtocol all -SSLv3 -TLSv1 -TLSv1.1'."
     try:
         server_location = ServerNetworkLocation(hostname=hostname, port=443)
+
 
         scan_request = ServerScanRequest(
             server_location=server_location,
@@ -122,9 +133,9 @@ def scan_tls_protocols(hostname):
                 ScanCommand.TLS_1_2_CIPHER_SUITES, ScanCommand.TLS_1_3_CIPHER_SUITES,
             },
         )
-
         scanner = Scanner()
         scanner.queue_scans([scan_request])
+
 
         print(f"  Scan en cours sur {hostname}, cela peut prendre un moment...")
 
@@ -142,31 +153,26 @@ def scan_tls_protocols(hostname):
                 "TLS 1.1": scan_result.tls_1_1_cipher_suites,
                 "TLS 1.2": scan_result.tls_1_2_cipher_suites,
                 "TLS 1.3": scan_result.tls_1_3_cipher_suites,
+
             }
-
-            for name, result_attempt in protocol_results.items():
-                if result_attempt.status == ScanCommandAttemptStatusEnum.ERROR:
-                    print(f"    ⚠️  Le scan pour {name} a échoué : {result_attempt.error_reason}")
-                    continue
-
-                result = result_attempt.result
-                if result.accepted_cipher_suites:
-                    if name in ["TLS 1.2", "TLS 1.3"]:
-                        print(f"    ✅ {name} : Supporté (CONFORME)")
-                    else:
-                        print(f"    ❌ {name} : Supporté (NON CONFORME - Vulnérable)")
+            for name, scan in proto_scans.items():
+                if scan.status == ScanCommandAttemptStatusEnum.ERROR: continue
+                if scan.result.accepted_cipher_suites:
+                    crit = "HIGH" if name in ["SSL 2.0", "SSL 3.0", "TLS 1.0", "TLS 1.1"] else "INFO"
+                    res = {"protocole": name, "statut": "ERROR" if crit == "HIGH" else "SUCCESS", "message": "Supporté", "criticite": crit}
+                    if crit == "HIGH": res["remediation"] = remediation_text
+                    results.append(res)
                 else:
-                    print(f"    ✅ {name} : Non supporté (CONFORME)")
-            break
-    except ServerHostnameCouldNotBeResolved:
-        print(f"  ERREUR : Le nom d'hôte '{hostname}' n'a pas pu être résolu.")
+                    results.append({"protocole": name, "statut": "SUCCESS", "message": "Non supporté", "criticite": "INFO"})
+            return results
     except Exception as e:
-        print(f"  Une erreur inattendue est survenue lors du scan sslyze : {e}")
+        return [{"statut": "ERROR", "message": f"Erreur inattendue lors du scan sslyze: {e}", "criticite": "HIGH"}]
 
 def check_http_to_https_redirect(hostname):
     """Vérifie si le site redirige automatiquement de HTTP vers HTTPS."""
-    print("\n--- Analyse de la redirection HTTP vers HTTPS ---")
+    remediation_text = "Configurez votre serveur web pour forcer la redirection de tout le trafic HTTP vers HTTPS. Pour Nginx: 'return 301 https://$host$request_uri;'."
     try:
+
         url = f"http://{hostname}"
         response = requests.get(url, allow_redirects=False, timeout=10)
 
@@ -198,10 +204,11 @@ def check_email_security_dns(hostname):
             print(f"      - {ns}")
     except dns.resolver.NoAnswer:
         print("    ❌ ERREUR : Aucun enregistrement NS trouvé.")
-    except Exception as e:
-        print(f"    ⚠️ AVERTISSEMENT : Une erreur est survenue lors de la recherche des serveurs de noms : {e}")
 
-    # 2. Vérification de l'enregistrement A
+    except Exception as e:
+        return {"statut": "ERROR", "message": f"Erreur lors du test de redirection: {e}", "criticite": "HIGH"}
+
+      # 2. Vérification de l'enregistrement A
     print("\n  2. Enregistrement A (Adresse IP) :")
     try:
         answers = dns.resolver.resolve(hostname, 'A')
@@ -216,19 +223,13 @@ def check_email_security_dns(hostname):
 
     # 3. Vérification de l'enregistrement MX
     print("\n  3. Enregistrements MX (Serveurs de messagerie) :")
-    try:
-        answers = dns.resolver.resolve(hostname, 'MX')
-        mx_records = sorted([(rdata.preference, str(rdata.exchange)) for rdata in answers])
-        print(f"    ✅ SUCCÈS : {len(mx_records)} serveurs de messagerie trouvés.")
-        for pref, exch in mx_records:
-            print(f"      - Priorité {pref}: {exch}")
-    except dns.resolver.NoAnswer:
-        print("    ❌ ERREUR : Aucun enregistrement MX trouvé.")
-    except Exception as e:
-        print(f"    ⚠️ AVERTISSEMENT : Une erreur est survenue lors de la recherche des enregistrements MX : {e}")
 
-    # 4. Vérification DMARC
-    print("\n  4. Enregistrement DMARC :")
+    try:
+        dmarc_ans = dns.resolver.resolve(f"_dmarc.{hostname}", 'TXT')
+        dmarc_rec = ' '.join([b.decode() for b in dmarc_ans[0].strings])
+        results['dmarc'] = {"statut": "SUCCESS", "valeur": dmarc_rec, "criticite": "INFO"}
+    except Exception:
+        results['dmarc'] = {"statut": "ERROR", "message": "Aucun enregistrement DMARC trouvé.", "criticite": "HIGH", "remediation": "Ajoutez un enregistrement DMARC à votre zone DNS pour protéger contre l'usurpation d'e-mail."}
     try:
         dmarc_query = f"_dmarc.{hostname}"
         answers = dns.resolver.resolve(dmarc_query, 'TXT')
@@ -264,53 +265,21 @@ def check_email_security_dns(hostname):
         if spf_record:
             print(f"    ✅ SUCCÈS : Enregistrement SPF trouvé.")
             print(f"      Valeur : {spf_record}")
+r
         else:
-            print("    ❌ ERREUR : Aucun enregistrement SPF (v=spf1) trouvé dans les enregistrements TXT.")
-            print("\n      --- Comment corriger ---")
-            print("      1. Créez un enregistrement DNS de type TXT pour votre domaine principal.")
-            print("      2. La valeur doit commencer par 'v=spf1' et inclure les adresses IP ou les domaines autorisés à envoyer des e-mails en votre nom.")
-            print("         Exemple : v=spf1 ip4:192.168.0.1 include:_spf.google.com ~all")
-            print("      3. '~all' ou '-all' à la fin indique comment traiter les e-mails non autorisés.")
-            print("      ------------------------")
-    except dns.resolver.NoAnswer:
-        print("    ❌ ERREUR : Aucune réponse pour les enregistrements TXT du domaine (nécessaire pour SPF).")
-    except Exception as e:
-        print(f"    ⚠️ AVERTISSEMENT : Une erreur est survenue lors de la recherche SPF : {e}")
+            results['spf'] = {"statut": "ERROR", "message": "Aucun enregistrement SPF trouvé.", "criticite": "HIGH", "remediation": "Ajoutez un enregistrement SPF à votre zone DNS pour spécifier les serveurs autorisés à envoyer des e-mails pour votre domaine."}
+    except Exception:
+        results['spf'] = {"statut": "ERROR", "message": "Aucun enregistrement TXT trouvé.", "criticite": "HIGH"}
+    return results
 
 def check_cookie_security(hostname):
-    """Analyse les attributs de sécurité des cookies définis par le serveur."""
-    print("\n--- Analyse de la sécurité des cookies ---")
+    """Analyse les attributs de sécurité des cookies et retourne une liste de résultats."""
+    results = []
     try:
-        url = f"https://{hostname}"
-        response = requests.get(url, timeout=10)
-
-        if not response.cookies:
-            print("  Aucun cookie n'a été défini par le serveur sur la page d'accueil.")
-            return
-
-        # requests.cookies ne contient pas les attributs comme HttpOnly ou SameSite.
-        # Il faut parser les en-têtes 'Set-Cookie' manuellement.
+        response = requests.get(f"https://{hostname}", timeout=10)
         raw_cookies = response.raw.headers.get_all('Set-Cookie', [])
         if not raw_cookies:
-             # Fallback si get_all n'est pas dispo ou vide, on se base sur l'objet cookie
-             if not response.cookies:
-                print("  Aucun cookie n'a été défini par le serveur sur la page d'accueil.")
-                return
-             else: # On fait une analyse partielle
-                for cookie in response.cookies:
-                    print(f"\n  Analyse (partielle) du cookie : '{cookie.name}'")
-                    if cookie.secure:
-                        print("    ✅ SUCCÈS : L'attribut 'Secure' est présent.")
-                    else:
-                        print("    ❌ ERREUR : L'attribut 'Secure' est manquant.")
-                    print("    ℹ️ INFO : L'analyse complète (HttpOnly, SameSite) a échoué, les en-têtes bruts sont indisponibles.")
-                return
-
-
-        for cookie_header in raw_cookies:
-            parts = [p.strip() for p in cookie_header.split(';')]
-            cookie_name = parts[0].split('=')[0]
-            print(f"\n  Analyse du cookie : '{cookie_name}'")
+            return [{"statut": "INFO", "message": "Aucun cookie n'a été défini par le serveur.", "criticite": "INFO"}]
 
             cookie_attributes = {p.lower() for p in parts[1:]}
 
@@ -342,12 +311,12 @@ def check_cookie_security(hostname):
     except requests.exceptions.RequestException as e:
         print(f"  Erreur lors de la récupération des cookies : {e}")
 
+
 def check_security_headers(hostname):
-    """Analyse les en-têtes de sécurité HTTP, y compris leurs valeurs."""
-    print("\n--- Analyse des en-têtes de sécurité HTTP ---")
+    """Analyse les en-têtes de sécurité HTTP et retourne un dictionnaire de résultats."""
+    results = {"empreinte": [], "en-tetes_securite": {}}
     try:
-        url = f"https://{hostname}"
-        response = requests.get(url, timeout=10)
+        response = requests.get(f"https://{hostname}", timeout=10)
         headers = {k.lower(): v for k, v in response.headers.items()}
 
         print(f"  Analyse des en-têtes pour l'URL finale : {response.url}")
@@ -371,17 +340,13 @@ def check_security_headers(hostname):
                 print("    ✅ SUCCÈS : La directive 'includeSubDomains' est présente.")
             else:
                 print("    ⚠️ AVERTISSEMENT : La directive 'includeSubDomains' est recommandée mais absente.")
-        else:
-            print("    ❌ ERREUR : L'en-tête HSTS est manquant. Très recommandé.")
 
-        # 2. X-Frame-Options
-        print("\n  2. X-Frame-Options :")
-        if 'x-frame-options' in headers:
-            value = headers['x-frame-options'].upper()
-            if value in ['DENY', 'SAMEORIGIN']:
-                print(f"    ✅ SUCCÈS : X-Frame-Options est correctement configuré à '{value}'.")
-            else:
-                print(f"    ⚠️ AVERTISSEMENT : X-Frame-Options a une valeur non standard : '{value}'.")
+        else:
+            results['en-tetes_securite']['hsts'] = {"statut": "ERROR", "criticite": "HIGH", "remediation": "Implémentez l'en-tête HSTS avec un 'max-age' d'au moins 6 mois. Exemple pour Nginx: add_header Strict-Transport-Security 'max-age=15552000; includeSubDomains';"}
+
+        xfo_header = headers.get('x-frame-options', '').upper()
+        if xfo_header in ['DENY', 'SAMEORIGIN']:
+            results['en-tetes_securite']['x-frame-options'] = {"statut": "SUCCESS", "criticite": "INFO"}
         else:
             print("    ❌ ERREUR : L'en-tête X-Frame-Options est manquant. Recommandé pour prévenir le clickjacking.")
 
@@ -393,35 +358,202 @@ def check_security_headers(hostname):
                 print(f"    ✅ SUCCÈS : X-Content-Type-Options est correctement configuré à 'nosniff'.")
             else:
                 print(f"    ⚠️ AVERTISSEMENT : X-Content-Type-Options a une valeur inattendue : '{value}'.")
-        else:
-            print("    ❌ ERREUR : L'en-tête X-Content-Type-Options est manquant.")
 
-        # 4. Content-Security-Policy (CSP)
-        print("\n  4. Content-Security-Policy (CSP) :")
-        if 'content-security-policy' in headers:
-            print("    ✅ SUCCÈS : L'en-tête Content-Security-Policy est présent.")
-            print(f"      Valeur : {headers['content-security-policy'][:100]}...") # Affiche les 100 premiers caractères
         else:
-            print("    ⚠️ AVERTISSEMENT : L'en-tête Content-Security-Policy est manquant. Recommandé pour une défense en profondeur.")
+            results['en-tetes_securite']['x-content-type-options'] = {"statut": "ERROR", "criticite": "MEDIUM", "remediation": "Ajoutez l'en-tête 'X-Content-Type-Options: nosniff'."}
 
-    except requests.exceptions.Timeout:
-        print("  ERREUR : La connexion au serveur a échoué (timeout) lors de la récupération des en-têtes.")
-        print("    Cause probable : Le serveur est trop lent à répondre ou un pare-feu bloque la connexion.")
-    except requests.exceptions.SSLError as e:
-        print("  ERREUR : Une erreur SSL est survenue lors de la récupération des en-têtes.")
-        print(f"    Cause probable : Le certificat du site n'est pas approuvé (auto-signé, chaîne incomplète, etc.). Détail : {e}")
-    except requests.exceptions.RequestException as e:
-        print(f"  Erreur inattendue lors de la récupération des en-têtes : {e}")
+        csp_header = headers.get('content-security-policy')
+        if csp_header:
+            results['en-tetes_securite']['csp'] = {"statut": "SUCCESS", "criticite": "INFO"}
+        else:
+            results['en-tetes_securite']['csp'] = {"statut": "WARNING", "criticite": "LOW", "remediation": "Envisagez d'implémenter une Content Security Policy (CSP) pour une défense en profondeur contre les attaques XSS."}
+            
+        return results
+    except Exception as e:
+        return {"statut": "ERROR", "message": f"Erreur lors de la récupération des en-têtes: {e}", "criticite": "HIGH"}
+
+def check_cms_footprint(hostname):
+    """Recherche des empreintes de CMS via la balise meta et retourne un dictionnaire."""
+    try:
+        response = requests.get(f"https://{hostname}", timeout=10)
+        soup = BeautifulSoup(response.content, 'lxml')
+        gen_tag = soup.find('meta', attrs={'name': 'generator'})
+        if gen_tag and gen_tag.get('content'):
+            return {"statut": "INFO", "message": f"Balise 'generator' trouvée: {gen_tag.get('content')}", "criticite": "INFO"}
+        return {"statut": "INFO", "message": "Aucune balise meta 'generator' trouvée.", "criticite": "INFO"}
+    except Exception as e:
+        return {"statut": "ERROR", "message": f"Erreur lors de l'analyse CMS: {e}", "criticite": "HIGH"}
+
+def check_cms_paths(hostname):
+    """Recherche des chemins de fichiers spécifiques à des CMS et retourne une liste de résultats."""
+    results = []
+    paths = {'WordPress': ['/wp-login.php', '/wp-admin/'], 'Joomla': ['/administrator/']}
+    for cms, path_list in paths.items():
+        for path in path_list:
+            try:
+                if requests.head(f"https://{hostname}{path}", timeout=3, allow_redirects=True).status_code in [200, 302, 301]:
+                    results.append({"cms": cms, "path": path, "criticite": "INFO"})
+            except requests.exceptions.RequestException: continue
+    return results
+
+
+def calculate_score(results):
+    """Calcule le score de dangerosité et attribue une note."""
+    total_score = 0
+    
+    def traverse_results(data):
+        nonlocal total_score
+        if isinstance(data, dict):
+            if 'criticite' in data:
+                total_score += SEVERITY_SCORES.get(data['criticite'], 0)
+            for key, value in data.items():
+                traverse_results(value)
+        elif isinstance(data, list):
+            for item in data:
+                traverse_results(item)
+
+    traverse_results(results)
+
+    if total_score == 0:
+        grade = "A+"
+    elif total_score <= 10:
+        grade = "A"
+    elif total_score <= 20:
+        grade = "B"
+    elif total_score <= 40:
+        grade = "C"
+    elif total_score <= 60:
+        grade = "D"
+    else:
+        grade = "F"
+        
+    return total_score, grade
+
+def print_human_readable_report(results):
+    """Affiche les résultats de l'analyse de manière lisible pour un humain."""
+    
+    STATUS_ICONS = {"SUCCESS": "✅", "ERROR": "❌", "WARNING": "⚠️", "INFO": "ℹ️"}
+    score, grade = calculate_score(results)
+
+    print("\n" + "="*50)
+    print(f" RAPPORT D'ANALYSE DE SÉCURITÉ POUR : {results['hostname']}")
+    print(f" SCORE DE DANGEROSITÉ : {score} (Note : {grade})")
+    print("="*50)
+
+    # Helper to print severity
+    def crit_str(criticite):
+        return f"[{criticite}]" if criticite != "INFO" else ""
+
+    # Certificat SSL
+    print("\n--- Analyse du certificat SSL/TLS ---")
+    ssl_cert = results.get('ssl_certificate', {})
+    icon = STATUS_ICONS.get(ssl_cert.get('statut'), '❓')
+    criticite = ssl_cert.get('criticite', '')
+    print(f"  {icon} {crit_str(criticite)} {ssl_cert.get('message', 'Aucune donnée.')}")
+    if ssl_cert.get('statut') == "SUCCESS":
+        print(f"    Sujet    : {ssl_cert.get('sujet')}\n    Émetteur : {ssl_cert.get('emetteur')}\n    Expire le: {ssl_cert.get('date_expiration')}")
+    if 'remediation' in ssl_cert:
+        print(f"    -> Action : {ssl_cert['remediation']}")
+
+    # Protocoles TLS
+    print("\n--- Scan des protocoles SSL/TLS supportés ---")
+    for proto in results.get('tls_protocols', []):
+        icon = STATUS_ICONS.get(proto.get('statut'), '❓')
+        criticite = proto.get('criticite', '')
+        print(f"  {icon} {crit_str(criticite)} {proto.get('protocole', '')} : {proto.get('message', '')}")
+        if 'remediation' in proto:
+            print(f"    -> Action : {proto['remediation']}")
+
+    # Redirection HTTP
+    print("\n--- Analyse de la redirection HTTP vers HTTPS ---")
+    redirect = results.get('http_redirect', {})
+    icon = STATUS_ICONS.get(redirect.get('statut'), '❓')
+    criticite = redirect.get('criticite', '')
+    print(f"  {icon} {crit_str(criticite)} {redirect.get('message', 'Aucune donnée.')}")
+    if 'remediation' in redirect:
+        print(f"    -> Action : {redirect['remediation']}")
+
+    # En-têtes de sécurité
+    print("\n--- Analyse des en-têtes de sécurité HTTP ---")
+    headers = results.get('security_headers', {})
+    if headers.get("statut") == "ERROR":
+        icon = STATUS_ICONS.get(headers.get('statut'), '❓')
+        print(f"  {icon} {crit_str(headers.get('criticite'))} {headers.get('message')}")
+    else:
+        print(f"  [Empreinte Technologique]")
+        for fp in headers.get('empreinte', []):
+            print(f"    {STATUS_ICONS['INFO']} {crit_str(fp.get('criticite'))} {fp.get('header', '').title()} : {fp.get('valeur')}")
+            if 'remediation' in fp:
+                print(f"      -> Action : {fp['remediation']}")
+        print("\n  [En-têtes de sécurité]")
+        for name, data in headers.get('en-tetes_securite', {}).items():
+            icon = STATUS_ICONS.get(data.get('statut'), '❓')
+            message = data.get('valeur') if data.get('statut') == 'SUCCESS' else data.get('message')
+            print(f"    {icon} {crit_str(data.get('criticite'))} {name.replace('_', '-').title()} : {message}")
+            if 'remediation' in data:
+                print(f"      -> Action : {data['remediation']}")
+
+    # Sécurité des Cookies
+    print("\n--- Analyse de la sécurité des cookies ---")
+    cookies = results.get('cookie_security', [])
+    if not cookies or cookies[0].get('criticite') == "INFO":
+        print(f"  {STATUS_ICONS['INFO']} {cookies[0].get('message') if cookies else 'Aucune information sur les cookies.'}")
+    else:
+        for cookie in cookies:
+            print(f"\n  Analyse du cookie : '{cookie.get('nom')}'")
+            for name in ['secure', 'httponly', 'samesite']:
+                attr = cookie.get(name, {})
+                icon = "✅" if attr.get('present') else "❌"
+                status_text = 'Présent' if attr.get('present') else 'Manquant'
+                print(f"    {icon} {crit_str(attr.get('criticite'))} {name.title()} : {status_text}")
+                if not attr.get('present') and 'remediation' in attr:
+                    print(f"      -> Action : {attr['remediation']}")
+
+    # Empreinte CMS
+    print("\n--- Analyse d'empreinte CMS ---")
+    cms_meta = results.get('cms_footprint_meta', {})
+    print(f"  {STATUS_ICONS['INFO']} {crit_str(cms_meta.get('criticite'))} [Meta Generator] {cms_meta.get('message')}")
+    cms_paths = results.get('cms_footprint_paths', [])
+    if not cms_paths:
+        print(f"  {STATUS_ICONS['INFO']} [Chemins Connus] Aucun chemin spécifique à un CMS commun n'a été trouvé.")
+    else:
+        for path in cms_paths:
+            print(f"  {STATUS_ICONS['INFO']} {crit_str(path.get('criticite'))} [Chemins Connus] Indice de '{path['cms']}' trouvé sur le chemin '{path['path']}'")
+
+    # Sécurité DNS
+    print("\n--- Analyse des enregistrements DNS et de sécurité e-mail ---")
+    dns_results = results.get('dns_security', {})
+    for name, data in dns_results.items():
+        icon = STATUS_ICONS.get(data.get('statut'), '❓')
+        valeurs = data.get('valeur', data.get('message', ''))
+        print(f"  {icon} {crit_str(data.get('criticite'))} {name.upper()} : {valeurs}")
+
+    # Légende
+    print("\n" + "="*50)
+    print(" LÉGENDE DE LA NOTE :")
+    print("  A+ : Excellent (0 points)")
+    print("  A  : Bon (1-10 points)")
+    print("  B  : Moyen (11-20 points)")
+    print("  C  : Médiocre (21-40 points)")
+    print("  D  : Mauvais (41-60 points)")
+    print("  F  : Critique (>60 points)")
+    print("="*50)
+
 
 def main():
     """Fonction principale du script."""
     parser = argparse.ArgumentParser(description="Analyseur de sécurité de site web.")
     parser.add_argument("url", help="L'URL du site web à analyser (ex: google.com).")
+    parser.add_argument(
+        "--rapport",
+        nargs='?',
+        const="DEFAULT_FILENAME",
+        help="Génère un rapport JSON. Si aucun nom de fichier n'est fourni, un nom par défaut sera utilisé."
+    )
     args = parser.parse_args()
 
     hostname = get_hostname(args.url)
     
-    print(f"Vérification de l'existence de l'hôte : {hostname}")
     if not check_host_exists(hostname):
         print(f"Erreur : L'hôte '{hostname}' est introuvable. Veuillez vérifier le nom de domaine.")
         sys.exit(1)
@@ -433,6 +565,7 @@ def main():
     check_security_headers(hostname)
     check_cookie_security(hostname)
     check_email_security_dns(hostname)
+
 
 if __name__ == "__main__":
     main()
