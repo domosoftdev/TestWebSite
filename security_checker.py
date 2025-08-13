@@ -13,6 +13,7 @@ import sys
 import urllib.parse
 import requests
 import json
+import csv
 from datetime import datetime
 from sslyze import (
     Scanner,
@@ -373,6 +374,125 @@ def check_js_libraries(hostname):
         return [{"statut": "ERROR", "message": f"Erreur lors de l'analyse des bibliothèques JS: {e}", "criticite": "HIGH"}]
     return results
 
+def generate_csv_report(results, hostname):
+    """Génère un rapport CSV à partir des résultats de l'analyse."""
+    date_str = datetime.now().strftime('%d%m%y')
+    filename = f"{hostname}_{date_str}.csv"
+
+    header = ['Catégorie', 'Sous-catégorie', 'Statut', 'Criticité', 'Description']
+    rows = []
+
+    # Helper pour aplatir les données
+    def flatten_data(category, sub_category, data):
+        if isinstance(data, list):
+            for item in data:
+                flatten_data(category, sub_category, item)
+        elif isinstance(data, dict):
+            if 'statut' in data and data['statut'] in ['ERROR', 'WARNING']:
+                rows.append({
+                    'Catégorie': category,
+                    'Sous-catégorie': data.get('protocole') or data.get('nom') or data.get('bibliotheque') or sub_category,
+                    'Statut': data.get('statut'),
+                    'Criticité': data.get('criticite'),
+                    'Description': data.get('message') or f"Version: {data.get('version_detectee')} (Dernière: {data.get('derniere_version')})" or "Détail non disponible"
+                })
+            # Pour les en-têtes et les cookies, on plonge plus profond
+            if 'en-tetes_securite' in data:
+                for k, v in data['en-tetes_securite'].items():
+                    flatten_data(category, k, v)
+            if 'secure' in data: # Cas spécifique des cookies
+                if not data['secure']['present']: flatten_data(category, f"{data['nom']} - secure", data['secure'])
+                if not data['httponly']['present']: flatten_data(category, f"{data['nom']} - httponly", data['httponly'])
+                if not data['samesite']['present']: flatten_data(category, f"{data['nom']} - samesite", data['samesite'])
+
+    for key, res in results.items():
+        if key in ['hostname', 'score_final', 'note']: continue
+        flatten_data(key.replace('_', ' ').title(), key, res)
+
+    try:
+        with open(filename, 'w', newline='', encoding='utf-8') as f:
+            writer = csv.DictWriter(f, fieldnames=header)
+            writer.writeheader()
+            writer.writerows(rows)
+        print(f"\n✅ Rapport CSV généré avec succès : {filename}")
+    except IOError as e:
+        print(f"\n❌ Erreur lors de l'écriture du rapport CSV : {e}")
+
+
+def generate_html_report(results, hostname):
+    """Génère un rapport HTML à partir des résultats de l'analyse."""
+    date_str = datetime.now().strftime('%d%m%y')
+    filename = f"{hostname}_{date_str}.html"
+
+    score = results.get('score_final', 0)
+    grade = results.get('note', 'N/A')
+
+    # CSS pour le style
+    html_style = """
+    <style>
+        body { font-family: sans-serif; margin: 2em; }
+        h1, h2, h3 { color: #333; }
+        .report-card { border: 1px solid #ddd; border-radius: 5px; margin-bottom: 1em; padding: 1em; }
+        .severity-CRITICAL { background-color: #d32f2f; color: white; }
+        .severity-HIGH { background-color: #f44336; color: white; }
+        .severity-MEDIUM { background-color: #ff9800; }
+        .severity-LOW { background-color: #ffc107; }
+        .severity-INFO { background-color: #f0f0f0; }
+        .finding { padding: 0.5em; border-left: 5px solid; margin-bottom: 0.5em; }
+        .finding-CRITICAL { border-color: #d32f2f; }
+        .finding-HIGH { border-color: #f44336; }
+        .finding-MEDIUM { border-color: #ff9800; }
+        .finding-LOW { border-color: #ffc107; }
+        .finding-INFO { border-color: #ccc; }
+        .remediation { font-style: italic; color: #555; }
+    </style>
+    """
+
+    # Début du HTML
+    html_content = f"<!DOCTYPE html><html><head><title>Rapport de Sécurité - {hostname}</title>{html_style}</head><body>"
+    html_content += f"<h1>Rapport d'Analyse de Sécurité pour {hostname}</h1>"
+    html_content += f"<div class='report-card severity-{grade if grade != 'A+' else 'INFO'}'><h2 style='margin-top:0;'>Score de Dangerosité : {score} (Note: {grade})</h2></div>"
+
+    # Boucle sur les résultats
+    for category, data in results.items():
+        if category in ['hostname', 'score_final', 'note']: continue
+        html_content += f"<div class='report-card'><h2>{category.replace('_', ' ').title()}</h2>"
+
+        # Logique d'affichage pour chaque catégorie
+        if isinstance(data, list):
+            for item in data:
+                crit = item.get('criticite', 'INFO')
+                html_content += f"<div class='finding finding-{crit}'>"
+                html_content += f"<strong>{item.get('protocole') or item.get('nom') or item.get('bibliotheque', 'Élément')}</strong>: {item.get('message', '')}<br>"
+                if 'version_detectee' in item:
+                    html_content += f"Version détectée: {item['version_detectee']}, dernière version: {item['derniere_version']}<br>"
+                remediation_id = item.get('remediation_id')
+                if remediation_id and remediation_id in REMEDIATION_ADVICE:
+                    html_content += f"<p class='remediation'>Action: {REMEDIATION_ADVICE[remediation_id].get('default', '')}</p>"
+                html_content += "</div>"
+        elif isinstance(data, dict):
+             for key, sub_data in data.items():
+                 if isinstance(sub_data, dict) and 'criticite' in sub_data:
+                    crit = sub_data.get('criticite', 'INFO')
+                    html_content += f"<div class='finding finding-{crit}'>"
+                    html_content += f"<strong>{key.replace('_', ' ').title()}</strong>: {sub_data.get('message') or sub_data.get('valeur') or 'N/A'}<br>"
+                    remediation_id = sub_data.get('remediation_id')
+                    if remediation_id and remediation_id in REMEDIATION_ADVICE:
+                        html_content += f"<p class='remediation'>Action: {REMEDIATION_ADVICE[remediation_id].get('default', '')}</p>"
+                    html_content += "</div>"
+
+        html_content += "</div>"
+
+    html_content += "</body></html>"
+
+    try:
+        with open(filename, 'w', encoding='utf-8') as f:
+            f.write(html_content)
+        print(f"\n✅ Rapport HTML généré avec succès : {filename}")
+    except IOError as e:
+        print(f"\n❌ Erreur lors de l'écriture du rapport HTML : {e}")
+
+
 def calculate_score(results):
     """Calcule le score de dangerosité et attribue une note."""
     total_score = 0
@@ -557,15 +677,26 @@ def print_human_readable_report(results):
     print("="*50)
 
 
+def generate_json_report(results, hostname):
+    """Génère un rapport JSON à partir des résultats de l'analyse."""
+    date_str = datetime.now().strftime('%d%m%y')
+    filename = f"{hostname}_{date_str}.json"
+    try:
+        with open(filename, 'w', encoding='utf-8') as f:
+            json.dump(results, f, indent=4, ensure_ascii=False)
+        print(f"\n✅ Rapport JSON généré avec succès : {filename}")
+    except IOError as e:
+        print(f"\n❌ Erreur lors de l'écriture du rapport JSON : {e}")
+
 def main():
     """Fonction principale du script."""
     parser = argparse.ArgumentParser(description="Analyseur de sécurité de site web.")
     parser.add_argument("url", help="L'URL du site web à analyser (ex: google.com).")
     parser.add_argument(
-        "--rapport",
-        nargs='?',
-        const="DEFAULT_FILENAME",
-        help="Génère un rapport JSON. Si aucun nom de fichier n'est fourni, un nom par défaut sera utilisé."
+        "--formats",
+        type=str,
+        default="",
+        help="Génère des rapports dans les formats spécifiés, séparés par des virgules (ex: json,html,csv)."
     )
     args = parser.parse_args()
 
@@ -597,20 +728,14 @@ def main():
     # Affichage sur la console
     print_human_readable_report(all_results)
 
-    # Génération du rapport JSON
-    if args.rapport:
-        if args.rapport == "DEFAULT_FILENAME":
-            date_str = datetime.now().strftime('%d%m%y')
-            filename = f"{hostname}_{date_str}.json"
-        else:
-            filename = args.rapport
-
-        try:
-            with open(filename, 'w', encoding='utf-8') as f:
-                json.dump(all_results, f, indent=4, ensure_ascii=False)
-            print(f"\n✅ Rapport JSON généré avec succès : {filename}")
-        except IOError as e:
-            print(f"\n❌ Erreur lors de l'écriture du rapport JSON : {e}")
+    # Génération des rapports
+    formats = [f.strip() for f in args.formats.lower().split(',') if f.strip()]
+    if 'json' in formats:
+        generate_json_report(all_results, hostname)
+    if 'csv' in formats:
+        generate_csv_report(all_results, hostname)
+    if 'html' in formats:
+        generate_html_report(all_results, hostname)
 
 if __name__ == "__main__":
     main()
