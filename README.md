@@ -8,85 +8,62 @@ Ce script Python analyse une URL donnée pour évaluer certains aspects de sa co
 
 ## Fonctionnalités
 
-Le script effectue les vérifications suivantes :
+Le script effectue actuellement les vérifications suivantes :
 
-1.  **Analyse SSL/TLS** : Vérification de la validité du certificat et scan des protocoles supportés (de SSLv2 à TLS 1.3).
-2.  **Analyse des En-têtes HTTP** : Recherche des en-têtes de sécurité fondamentaux (HSTS, X-Frame-Options, CSP, etc.).
-3.  **Analyse de la Redirection** : S'assure que le site redirige bien de HTTP vers HTTPS.
-4.  **Sécurité des Cookies** : Vérifie la présence des attributs `Secure`, `HttpOnly` et `SameSite`.
-5.  **Sécurité DNS** : Contrôle la présence et la configuration des enregistrements `A`, `MX`, `NS`, `DMARC` et `SPF`.
-6.  **Empreinte Technologique (Footprinting)** :
-    *   Détecte les technologies du serveur web (ex: `nginx`, `Apache`) via les en-têtes HTTP.
-    *   Identifie les CMS (ex: `WordPress`, `Joomla`) en analysant les balises `<meta>` et en testant des chemins connus (`/wp-admin`, etc.).
-7.  **Rapports Flexibles** :
-    *   Affiche un rapport clair et lisible directement dans la console.
-    *   Génère un rapport détaillé au format **JSON** pour une intégration facile avec d'autres outils.
+1.  **Vérification de la chaîne de confiance et de l'expiration du certificat SSL/TLS**
+    *   C'est le point de départ. Si le certificat est invalide ou expiré, tout le reste est compromis. Un certificat non valide empêche la connexion sécurisée, ce qui expose les données des utilisateurs. Le vérifier en premier garantit que la communication entre le client et le serveur est sécurisée.
+
+2.  **Analyse des en-têtes de sécurité HTTP (Strict-Transport-Security, X-Frame-Options, X-Content-Type-Options)**
+    *   Ces en-têtes sont des mesures de sécurité défensives très efficaces et faciles à implémenter.
+    *   **Strict-Transport-Security (HSTS)** force le navigateur à n'utiliser que des connexions HTTPS pour ce site, ce qui réduit le risque de man-in-the-middle.
+    *   **X-Frame-Options** et **Content-Security-Policy (CSP)** protègent contre le clickjacking et l'injection de contenu malveillant en contrôlant comment le site peut être intégré dans d'autres pages.
+    *   **X-Content-Type-Options** empêche les navigateurs d'interpréter le code de manière incorrecte, ce qui protège contre certaines attaques.
+
+3.  **Redirections HTTP vers HTTPS**
+    *   Une fois que vous savez que le certificat est valide, assurez-vous que toutes les requêtes non chiffrées sont automatiquement redirigées vers la version sécurisée du site. Si ce n'est pas le cas, un attaquant peut intercepter les premières requêtes des utilisateurs sur une connexion non chiffrée.
+
+4.  **Scan des versions de protocoles SSL/TLS supportées**
+    *   Le script scanne activement le serveur pour déterminer quelles versions de protocoles (de SSL 2.0 à TLS 1.3) sont activées. Il signale les protocoles obsolètes et vulnérables (SSLv2, SSLv3, TLS 1.0, TLS 1.1) comme étant non conformes, car leur utilisation expose à des risques de sécurité connus.
+
+5.  **Vérification des enregistrements DNS de sécurité (A, MX, NS, DMARC, SPF)**
+    *   Le script vérifie les enregistrements DNS fondamentaux (A, MX, NS) et ceux liés à la sécurité des e-mails (DMARC, SPF). Il fournit des conseils de correction si les enregistrements DMARC ou SPF sont manquants.
+
+6.  **Analyse des attributs de cookies (HttpOnly, Secure, SameSite)**
+    *   Des cookies mal configurés peuvent être volés, ce qui expose les sessions des utilisateurs. S'assurer qu'ils sont marqués `HttpOnly` (pour empêcher l'accès via JavaScript), `Secure` (pour forcer le chiffrement) et `SameSite` (pour prévenir les attaques CSRF) protège contre de nombreuses menaces.
 
 ## Installation
 
-1.  Assurez-vous d'avoir Python 3 et pip installés.
-2.  Clonez ce dépôt ou téléchargez les fichiers.
-3.  Installez les dépendances :
+1.  Assurez-vous d'avoir Python 3 installé sur votre système.
+2.  Clonez ce dépôt ou téléchargez les fichiers `security_checker.py` et `requirements.txt`.
+3.  Installez les dépendances nécessaires en utilisant pip :
+
     ```bash
     pip install -r requirements.txt
     ```
 
 ## Utilisation
 
-### Analyse de base
+Pour analyser un site web, exécutez le script depuis votre terminal en lui passant l'URL ou le nom de domaine comme argument.
 
-Pour lancer une analyse et afficher les résultats dans la console :
 ```bash
-python3 security_checker.py exemple.com
-```
-
-### Génération d'un rapport JSON
-
-Pour générer un rapport JSON en plus de l'affichage console, utilisez l'argument `--rapport`.
-
-**1. Avec un nom de fichier par défaut :**
-Le nom du fichier sera généré automatiquement (ex: `exemple.com_100825.json`).
-```bash
-python3 security_checker.py exemple.com --rapport
-```
-
-**2. Avec un nom de fichier spécifique :**
-```bash
-python3 security_checker.py exemple.com --rapport mon_rapport.json
+python3 security_checker.py google.com
 ```
 
 ### Exemple de sortie
 
-La nouvelle sortie console est améliorée pour une meilleure lisibilité :
 ```
- Hôte analysé : google.com
-========================================
+Analyse de l'hôte : google.com
 
 --- Analyse du certificat SSL/TLS ---
-  ✅ Le certificat est valide.
-    Sujet    : *.google.com
-    Émetteur : WR2
-    Expire le: 2025-09-29
-
---- Scan des protocoles SSL/TLS supportés ---
-  ✅ SSL 2.0 : Non supporté (CONFORME)
-  ❌ TLS 1.0 : Supporté (NON CONFORME - Vulnérable)
-  ✅ TLS 1.3 : Supporté (CONFORME)
-
---- Analyse de la redirection HTTP vers HTTPS ---
-  ❌ Le site redirige, mais pas directement vers HTTPS (vers: http://www.google.com/).
+  Sujet du certificat : *.google.com
+  Émetteur : WR2
+  Date d'expiration : 2025-09-29
+  Le certificat est valide.
 
 --- Analyse des en-têtes de sécurité HTTP ---
-  URL finale analysée : https://www.google.com/
+  Analyse des en-têtes pour l'URL finale : https://www.google.com/
 
-  [Empreinte Technologique]
-    ℹ️ Serveur Web : gws
-
-  [En-têtes de sécurité]
-    ❌ Hsts : En-tête manquant.
-    ✅ X-Frame-Options : SAMEORIGIN
-
---- Analyse d'empreinte CMS ---
-  ℹ️ [Meta Generator] Aucune balise meta 'generator' trouvée.
-  ℹ️ [Chemins Connus] Aucun chemin spécifique à un CMS commun n'a été trouvé.
+  En-têtes de sécurité trouvés :
+    - Content-Security-Policy-Report-Only: Trouvé
+    - X-Frame-Options: Trouvé
 ```

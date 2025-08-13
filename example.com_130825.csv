@@ -1,8 +1,0 @@
-Catégorie,Sous-catégorie,Statut,Criticité,Description,Vulnérabilités
-Tls Protocols,tls_protocols,ERROR,HIGH,Impossible de se connecter à example.com pour le scan TLS.,
-Http Redirect,http_redirect,ERROR,MEDIUM,La redirection de HTTP vers HTTPS n'est pas correctement configurée.,
-Security Headers,hsts,ERROR,HIGH,Version: None (Dernière: None),
-Security Headers,x-frame-options,ERROR,MEDIUM,Version: None (Dernière: None),
-Security Headers,x-content-type-options,ERROR,MEDIUM,Version: None (Dernière: None),
-Security Headers,csp,WARNING,LOW,Version: None (Dernière: None),
-Js Libraries,jquery,WARNING,HIGH,Version: 1.12.4 (Dernière: 3.7.1),CVE-2020-11022
