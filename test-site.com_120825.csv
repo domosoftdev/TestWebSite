@@ -1,5 +1,0 @@
-Catégorie,Sous-catégorie,Statut,Criticité,Description
-Ssl Certificate,ssl_certificate,ERROR,CRITICAL,Le certificat a expiré.
-Tls Protocols,TLS 1.1,ERROR,HIGH,Supporté
-Security Headers,hsts,ERROR,HIGH,Version: None (Dernière: None)
-Js Libraries,jquery,WARNING,MEDIUM,Version: 3.1.0 (Dernière: 3.7.1)
