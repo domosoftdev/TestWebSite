@@ -218,26 +218,60 @@ def check_cms_paths(hostname):
 
 def check_js_libraries(hostname):
     results = []
+    detected_libs = {}
     try:
-        response = requests.get(f"https://{hostname}", timeout=10); soup = BeautifulSoup(response.content, 'lxml')
+        response = requests.get(f"https://{hostname}", timeout=10)
+        soup = BeautifulSoup(response.content, 'lxml')
+
+        # Method 1: Check script filenames for versions
         for script in soup.find_all('script', src=True):
-            src = script['src']; match = re.search(r'([a-zA-Z0-9.-]+)[._-]([0-9]+(?:\.[0-9]+)*)(?:[._-]min)?\.js', src)
+            src = script['src']
+            match = re.search(r'([a-zA-Z0-9.-]+)[._-]([0-9]+(?:\.[0-9]+)*)(?:[._-]min)?\.js', src)
             if match:
-                lib_name = match.group(1).lower(); detected_version_str = match.group(2)
-                if lib_name in KNOWN_JS_LIBRARIES:
-                    lib_info = KNOWN_JS_LIBRARIES[lib_name]; latest_version_str = lib_info["latest"]
-                    try:
-                        detected_v = version.parse(detected_version_str); latest_v = version.parse(latest_version_str)
-                        result_entry = {"bibliotheque": lib_name, "version_detectee": detected_version_str, "derniere_version": latest_version_str, "vulnerabilities": []}
-                        if detected_v < latest_v:
-                            result_entry.update({"statut": "WARNING", "criticite": "MEDIUM", "remediation_id": "JS_LIB_OBSOLETE"})
-                            vulns = query_osv_api(lib_name, detected_version_str, lib_info["ecosystem"])
-                            if vulns:
-                                result_entry["criticite"] = "HIGH"
-                                for v in vulns: result_entry["vulnerabilities"].append({"id": v.get('id'), "summary": v.get('summary', 'Pas de résumé.'), "details": v.get('details', '')})
-                        else: result_entry.update({"statut": "SUCCESS", "criticite": "INFO"})
-                        results.append(result_entry)
-                    except version.InvalidVersion: continue
+                lib_name = match.group(1).lower()
+                detected_version_str = match.group(2)
+                if lib_name in KNOWN_JS_LIBRARIES and lib_name not in detected_libs:
+                    detected_libs[lib_name] = {"version": detected_version_str, "source": "filename"}
+
+        # Method 2: Check script content for signatures (if not already found)
+        for script in soup.find_all('script'):
+            content = script.string
+            if not content:
+                continue
+
+            if 'jquery' not in detected_libs and ('jQuery' in content or re.search(r'\$\s*\(', content)):
+                detected_libs['jquery'] = {"version": "inconnu", "source": "inline content"}
+            if 'react' not in detected_libs and 'React.createElement' in content:
+                detected_libs['react'] = {"version": "inconnu", "source": "inline content"}
+            if 'angular' not in detected_libs and 'angular.module' in content:
+                detected_libs['angular'] = {"version": "inconnu", "source": "inline content"}
+
+        # Consolidate results
+        for lib_name, data in detected_libs.items():
+            lib_info = KNOWN_JS_LIBRARIES[lib_name]
+            latest_version_str = lib_info["latest"]
+            detected_version_str = data["version"]
+
+            result_entry = {"bibliotheque": lib_name, "version_detectee": detected_version_str, "derniere_version": latest_version_str, "vulnerabilities": []}
+
+            if detected_version_str == "inconnu":
+                result_entry.update({"statut": "WARNING", "criticite": "LOW", "message": "Bibliothèque détectée mais version inconnue."})
+            else:
+                try:
+                    detected_v = version.parse(detected_version_str)
+                    latest_v = version.parse(latest_version_str)
+                    if detected_v < latest_v:
+                        result_entry.update({"statut": "WARNING", "criticite": "MEDIUM", "remediation_id": "JS_LIB_OBSOLETE"})
+                        vulns = query_osv_api(lib_name, detected_version_str, lib_info["ecosystem"])
+                        if vulns:
+                            result_entry["criticite"] = "HIGH"
+                            for v in vulns: result_entry["vulnerabilities"].append({"id": v.get('id'), "summary": v.get('summary', 'Pas de résumé.'), "details": v.get('details', '')})
+                    else:
+                        result_entry.update({"statut": "SUCCESS", "criticite": "INFO"})
+                except version.InvalidVersion:
+                    continue
+            results.append(result_entry)
+
     except Exception as e:
         return [{"statut": "ERROR", "message": f"Erreur lors de l'analyse des bibliothèques JS: {e}", "criticite": "HIGH"}]
     return results
