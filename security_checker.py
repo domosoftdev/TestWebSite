@@ -386,8 +386,12 @@ def print_human_readable_report(results):
     else:
         for cookie in cookies:
             print(f"\n  Analyse du cookie : '{cookie.get('nom')}'")
-            for name in ['secure', 'httponly', 'samesite']: attr = cookie.get(name, {}); icon = "✅" if attr.get('present') else "❌"; print(f"    {icon} {crit_str(attr.get('criticite'))} {name.title()} : {'Présent' if attr.get('present') else 'Manquant'}");
-                if not attr.get('present'): print_remediation(attr)
+            for name in ['secure', 'httponly', 'samesite']:
+                attr = cookie.get(name, {})
+                icon = "✅" if attr.get('present') else "❌"
+                print(f"    {icon} {crit_str(attr.get('criticite'))} {name.title()} : {'Présent' if attr.get('present') else 'Manquant'}")
+                if not attr.get('present'):
+                    print_remediation(attr)
     print("\n--- Analyse des enregistrements DNS ---"); dns_results = results.get('dns_records', {})
     dns_order = [('ns', 'Serveurs de noms (NS)'), ('a', 'Adresses IP (A)'), ('mx', 'Serveurs de messagerie (MX)'), ('dmarc', 'Enregistrement DMARC'), ('spf', 'Enregistrement SPF')]
     for key, title in dns_order:
