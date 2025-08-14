@@ -221,7 +221,7 @@ def check_js_libraries(hostname):
     try:
         response = requests.get(f"https://{hostname}", timeout=10); soup = BeautifulSoup(response.content, 'lxml')
         for script in soup.find_all('script', src=True):
-            src = script['src']; match = re.search(r'([a-zA-Z0-9.-]+)-([0-9]+\.[0-9]+\.[0-9]+)(.min)?\.js', src)
+            src = script['src']; match = re.search(r'([a-zA-Z0-9.-]+)[._-]([0-9]+(?:\.[0-9]+)*)(?:[._-]min)?\.js', src)
             if match:
                 lib_name = match.group(1).lower(); detected_version_str = match.group(2)
                 if lib_name in KNOWN_JS_LIBRARIES:
