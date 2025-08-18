@@ -217,36 +217,50 @@ def check_cms_paths(hostname):
     return results
 
 def check_js_libraries(hostname):
+    """
+    Scans a given hostname for known JavaScript libraries using two methods:
+    1. Regex matching on script filenames (for versioned files).
+    2. Signature matching within inline script content.
+    """
     results = []
-    detected_libs = {}
+    detected_libs = {}  # Use a dict to store findings and prevent duplicates
+
     try:
         response = requests.get(f"https://{hostname}", timeout=10)
         soup = BeautifulSoup(response.content, 'lxml')
 
-        # Method 1: Check script filenames for versions
+        # --- METHOD 1: Scan external script filenames ---
+        # This method is fast and precise if the library includes its version in the filename.
         for script in soup.find_all('script', src=True):
             src = script['src']
-            match = re.search(r'([a-zA-Z0-9.-]+)[._-]([0-9]+(?:\.[0-9]+)*)(?:[._-]min)?\.js', src)
+            # Flexible, non-greedy regex to find patterns like 'jquery-3.7.1.min.js'
+            match = re.search(r'([a-zA-Z0-9.-]+?)[._-]([0-9]+\.[0-9]+(?:\.[0-9]+)?)(?:[._-]min)?\.js', src)
             if match:
                 lib_name = match.group(1).lower()
                 detected_version_str = match.group(2)
+                # If it's a known library and we haven't found it yet, store it.
                 if lib_name in KNOWN_JS_LIBRARIES and lib_name not in detected_libs:
                     detected_libs[lib_name] = {"version": detected_version_str, "source": "filename"}
 
-        # Method 2: Check script content for signatures (if not already found)
+        # --- METHOD 2: Scan inline script content for signatures ---
+        # This method is broader and can find libraries that are bundled or loaded dynamically,
+        # but it often cannot determine the exact version number.
         for script in soup.find_all('script'):
             content = script.string
             if not content:
                 continue
-
+            
+            # Signature for jQuery: presence of 'jQuery' or the '$(' function call.
             if 'jquery' not in detected_libs and ('jQuery' in content or re.search(r'\$\s*\(', content)):
                 detected_libs['jquery'] = {"version": "inconnu", "source": "inline content"}
+            # Signature for React: presence of 'React.createElement'.
             if 'react' not in detected_libs and 'React.createElement' in content:
                 detected_libs['react'] = {"version": "inconnu", "source": "inline content"}
+            # Signature for AngularJS: presence of 'angular.module'.
             if 'angular' not in detected_libs and 'angular.module' in content:
                 detected_libs['angular'] = {"version": "inconnu", "source": "inline content"}
 
-        # Consolidate results
+        # --- Consolidate and format results ---
         for lib_name, data in detected_libs.items():
             lib_info = KNOWN_JS_LIBRARIES[lib_name]
             latest_version_str = lib_info["latest"]
@@ -254,14 +268,17 @@ def check_js_libraries(hostname):
 
             result_entry = {"bibliotheque": lib_name, "version_detectee": detected_version_str, "derniere_version": latest_version_str, "vulnerabilities": []}
 
+            # Handle cases where the version could not be determined.
             if detected_version_str == "inconnu":
                 result_entry.update({"statut": "WARNING", "criticite": "LOW", "message": "Bibliothèque détectée mais version inconnue."})
             else:
+                # If version is known, compare it to the latest known version.
                 try:
                     detected_v = version.parse(detected_version_str)
                     latest_v = version.parse(latest_version_str)
                     if detected_v < latest_v:
                         result_entry.update({"statut": "WARNING", "criticite": "MEDIUM", "remediation_id": "JS_LIB_OBSOLETE"})
+                        # Check for known vulnerabilities in the old version.
                         vulns = query_osv_api(lib_name, detected_version_str, lib_info["ecosystem"])
                         if vulns:
                             result_entry["criticite"] = "HIGH"
@@ -269,13 +286,14 @@ def check_js_libraries(hostname):
                     else:
                         result_entry.update({"statut": "SUCCESS", "criticite": "INFO"})
                 except version.InvalidVersion:
-                    continue
+                    continue # Skip if the detected version string is invalid.
             results.append(result_entry)
 
     except Exception as e:
+        # Return a generic error if the scan fails for any reason (e.g., network issues).
         return [{"statut": "ERROR", "message": f"Erreur lors de l'analyse des bibliothèques JS: {e}", "criticite": "HIGH"}]
     return results
-
+    
 def check_wordpress_specifics(hostname):
     results = {}; base_url = f"https://{hostname}"
     try:
