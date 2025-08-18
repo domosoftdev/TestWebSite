@@ -1,0 +1,114 @@
+{
+    "hostname": "github.com",
+    "ssl_certificate": {
+        "statut": "ERROR",
+        "message": "La connexion au serveur a échoué (timeout).",
+        "criticite": "HIGH"
+    },
+    "tls_protocols": [
+        {
+            "statut": "ERROR",
+            "message": "Impossible de se connecter à github.com pour le scan TLS.",
+            "criticite": "HIGH"
+        }
+    ],
+    "http_redirect": {
+        "statut": "SUCCESS",
+        "message": "Redirection correcte vers HTTPS.",
+        "criticite": "INFO"
+    },
+    "security_headers": {
+        "statut": "ERROR",
+        "message": "Erreur lors de la récupération des en-têtes: HTTPSConnectionPool(host='github.com', port=443): Max retries exceeded with url: / (Caused by ConnectTimeoutError(<urllib3.connection.HTTPSConnection object at 0x7ff623a56d80>, 'Connection to github.com timed out. (connect timeout=10)'))",
+        "criticite": "HIGH"
+    },
+    "cookie_security": [
+        {
+            "statut": "ERROR",
+            "message": "Erreur lors de la récupération des cookies: HTTPSConnectionPool(host='github.com', port=443): Max retries exceeded with url: / (Caused by ConnectTimeoutError(<urllib3.connection.HTTPSConnection object at 0x7ff623a57b60>, 'Connection to github.com timed out. (connect timeout=10)'))",
+            "criticite": "HIGH"
+        }
+    ],
+    "cms_footprint_meta": {
+        "statut": "INFO",
+        "message": "Aucune balise meta 'generator' trouvée.",
+        "criticite": "INFO"
+    },
+    "cms_footprint_paths": [
+        {
+            "cms": "WordPress",
+            "path": "/wp-admin/",
+            "criticite": "INFO"
+        }
+    ],
+    "wordpress_specifics": {
+        "config_backup": {
+            "statut": "INFO",
+            "criticite": "INFO",
+            "message": "Erreur réseau lors de la vérification de wp-config.php.bak."
+        },
+        "user_enum": {
+            "statut": "SUCCESS",
+            "criticite": "INFO",
+            "message": "L'énumération d'utilisateurs via ?author=1 ne semble pas possible."
+        },
+        "plugin_enum": {
+            "statut": "INFO",
+            "criticite": "INFO",
+            "message": "Aucun plugin détecté depuis la page d'accueil."
+        }
+    },
+    "dns_records": {
+        "ns": {
+            "statut": "SUCCESS",
+            "valeurs": [
+                "ns-1283.awsdns-32.org.",
+                "dns3.p08.nsone.net.",
+                "dns2.p08.nsone.net.",
+                "ns-421.awsdns-52.com.",
+                "ns-1707.awsdns-21.co.uk.",
+                "dns4.p08.nsone.net.",
+                "dns1.p08.nsone.net.",
+                "ns-520.awsdns-01.net."
+            ],
+            "criticite": "INFO"
+        },
+        "a": {
+            "statut": "SUCCESS",
+            "valeurs": [
+                "140.82.113.3"
+            ],
+            "criticite": "INFO"
+        },
+        "mx": {
+            "statut": "SUCCESS",
+            "valeurs": [
+                "Prio 1: aspmx.l.google.com.",
+                "Prio 5: alt1.aspmx.l.google.com.",
+                "Prio 5: alt2.aspmx.l.google.com.",
+                "Prio 10: alt3.aspmx.l.google.com.",
+                "Prio 10: alt4.aspmx.l.google.com."
+            ],
+            "criticite": "INFO"
+        },
+        "dmarc": {
+            "statut": "SUCCESS",
+            "valeur": "v=DMARC1; p=reject; pct=100; rua=mailto:dmarc@github.com",
+            "criticite": "INFO"
+        },
+        "spf": {
+            "statut": "ERROR",
+            "message": "Aucun enregistrement TXT trouvé.",
+            "criticite": "HIGH"
+        }
+    },
+    "js_libraries": [
+        {
+            "statut": "ERROR",
+            "message": "Erreur lors de l'analyse des bibliothèques JS: HTTPSConnectionPool(host='github.com', port=443): Max retries exceeded with url: / (Caused by ConnectTimeoutError(<urllib3.connection.HTTPSConnection object at 0x7ff622e3baa0>, 'Connection to github.com timed out. (connect timeout=10)'))",
+            "criticite": "HIGH"
+        }
+    ],
+    "score_final": 42,
+    "note": "D"
+}

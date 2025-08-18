@@ -67,3 +67,117 @@ Analyse de l'hôte : google.com
     - Content-Security-Policy-Report-Only: Trouvé
     - X-Frame-Options: Trouvé
 ```
+
+---
+
+## Outil de Consolidation (`consolidator.py`)
+
+En plus du scanner principal, ce projet inclut `consolidator.py`, un outil puissant pour analyser les résultats de multiples scans sur la durée. Il vous permet de suivre l'évolution de la posture de sécurité de vos sites web.
+
+### Mise en Place
+
+1.  **Créez un fichier `targets.txt`** à la racine du projet. Listez-y les domaines que vous souhaitez surveiller, un par ligne.
+    ```
+    google.com
+    github.com
+    votresite.com
+    ```
+
+2.  **Créez un répertoire `scans/`** à la racine du projet. C'est ici que tous les rapports de scan JSON seront stockés.
+    ```bash
+    mkdir scans
+    ```
+
+### Génération des Rapports
+
+Pour que le consolidateur fonctionne, il a besoin de données. Exécutez `security_checker.py` en utilisant l'argument `--formats json` pour générer un rapport JSON. Le script nommera automatiquement le fichier (`<domaine>_<date>.json`) et le placera dans le répertoire courant.
+
+```bash
+# Lancez le scan et générez le rapport JSON
+python3 security_checker.py votresite.com --formats json
+
+# Déplacez le rapport dans le répertoire des scans
+mv votresite.com_180825.json scans/
+```
+Répétez cette opération régulièrement pour construire un historique des scans.
+
+### Utilisation du Consolidateur
+
+Voici les commandes disponibles pour l'outil de consolidation :
+
+#### 1. Voir l'état des scans (`--status`)
+Affiche la liste des cibles de votre fichier `targets.txt` et indique si un scan a été trouvé pour chacune.
+```bash
+python3 consolidator.py --status
+```
+*Exemple de sortie :*
+```
+📊 État des scans cibles :
+  [✅] google.com
+  [❌] github.com
+
+Total: 1 / 2 cibles scannées.
+```
+
+#### 2. Lister les scans pour un domaine (`--list-scans`)
+Affiche tous les rapports de scan disponibles pour un domaine spécifique, triés par date.
+```bash
+python3 consolidator.py --list-scans google.com
+```
+*Exemple de sortie :*
+```
+🔎 Scans disponibles pour 'google.com':
+  - Date: 2025-08-18, Score: 49, Note: D
+  - Date: 2025-08-17, Score: 53, Note: D
+```
+
+#### 3. Comparer deux scans (`--compare`)
+Analyse l'évolution de la sécurité d'un site entre deux dates.
+```bash
+python3 consolidator.py --compare google.com 2025-08-17 2025-08-18
+```
+*Exemple de sortie :*
+```
+🔄 Comparaison des scans pour 'google.com' entre 2025-08-17 et 2025-08-18
+
+Score: 53 (à 2025-08-17) -> 49 (à 2025-08-18)
+  -> ✅ Amélioration du score de 4 points.
+
+--- Changements des vulnérabilités ---
+
+[✅ VULNÉRABILITÉS CORRIGÉES]
+  - security_headers.en-tetes_securite.x-frame-options.XFO_MISSING
+
+[⚠️ 6 VULNÉRABILITÉS PERSISTANTES]
+```
+
+#### 4. Identifier les scans les plus anciens (`--oldest`)
+Aide à prioriser les prochains scans en montrant les cibles qui n'ont pas été analysées depuis le plus longtemps.
+```bash
+python3 consolidator.py --oldest
+```
+*Exemple de sortie :*
+```
+🕒 Scans les plus anciens (par cible) :
+  - github.com                Dernier scan: JAMAIS (Priorité haute)
+  - google.com                Dernier scan: 2025-08-18
+```
+
+#### 5. Trouver les "Quick Wins" (`--quick-wins`)
+Liste les vulnérabilités faciles à corriger (comme les en-têtes de sécurité manquants) pour un domaine spécifique ou pour tous les domaines scannés.
+```bash
+# Pour un domaine spécifique
+python3 consolidator.py --quick-wins google.com
+
+# Pour tous les domaines
+python3 consolidator.py --quick-wins
+```
+*Exemple de sortie :*
+```
+🚀 Quick Wins (vulnérabilités faciles à corriger) :
+
+--- google.com (Scan du 2025-08-18) ---
+  - security_headers.en-tetes_securite.csp.CSP_MISSING
+  - security_headers.en-tetes_securite.hsts.HSTS_MISSING
+  - security_headers.en-tetes_securite.x-content-type-options.XCTO_MISSING
+```
