@@ -232,3 +232,23 @@ Les types de rapports actuellement supportés sont :
 *   `csp` (Content-Security-Policy)
 *   `js-libs` (Bibliothèques JavaScript obsolètes)
 *   `http-redirect` (Redirection HTTP vers HTTPS)
+
+---
+
+### 8. Rapports Visuels (HTML & Graphiques)
+
+Pour une vue d'ensemble encore plus claire, l'outil peut générer des rapports visuels.
+
+#### Rapport de Synthèse HTML (`--summary-html`)
+Crée un tableau de bord HTML (`summary_report.html`) de tous les sites listés dans `targets.txt`, affichant leur état de sécurité actuel.
+```bash
+python3 consolidator.py --summary-html
+```
+Cette commande génère un fichier HTML que vous pouvez ouvrir dans votre navigateur pour une vue d'ensemble facile à partager.
+
+#### Graphique d'Évolution (`--graph`)
+Pour un domaine spécifique, génère un graphique (`<domaine>_evolution.png`) qui montre comment son score de sécurité a évolué au fil du temps.
+```bash
+python3 consolidator.py --graph google.com
+```
+Ceci est particulièrement utile pour visualiser les progrès (ou les régressions) de la sécurité d'un site.
