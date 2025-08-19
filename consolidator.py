@@ -448,9 +448,10 @@ def generate_html_summary(all_scans):
     today = datetime.now()
 
     for target in targets:
-        most_recent_scan = next((s for s in sorted(all_scans, key=lambda x: x['date'], reverse=True) if s['domain'] == target), None)
+        scans_for_domain = sorted([s for s in all_scans if s['domain'] == target], key=lambda x: x['date'], reverse=True)
 
-        if most_recent_scan:
+        if scans_for_domain:
+            most_recent_scan = scans_for_domain[0]
             cert_info = most_recent_scan['data'].get('ssl_certificate', {})
             exp_date_str = cert_info.get('date_expiration')
             exp_date_obj = None
@@ -462,11 +463,22 @@ def generate_html_summary(all_scans):
                 except ValueError:
                     pass # La date est invalide, on la laisse à None
 
+            # Calcul de la tendance
+            trend = "➡️"
+            if len(scans_for_domain) > 1:
+                score_new = most_recent_scan['data'].get('score_final', 0)
+                score_old = scans_for_domain[1]['data'].get('score_final', 0)
+                if score_new < score_old:
+                    trend = "⬇️" # Amélioration
+                elif score_new > score_old:
+                    trend = "⬆️" # Régression
+
             summary_data.append({
                 "domain": target,
                 "last_scan": most_recent_scan['date'].strftime('%Y-%m-%d'),
                 "score": most_recent_scan['data'].get('score_final', 'N/A'),
                 "grade": most_recent_scan['data'].get('note', 'N/A'),
+                "trend": trend,
                 "cert_exp": exp_date_obj,
                 "cert_days_left": days_left
             })
@@ -476,6 +488,7 @@ def generate_html_summary(all_scans):
                 "last_scan": "Jamais",
                 "score": "N/A",
                 "grade": "N/A",
+                "trend": "N/A",
                 "cert_exp": None,
                 "cert_days_left": None
             })
@@ -502,9 +515,15 @@ def generate_html_summary(all_scans):
             .grade-C { background-color: #e67e22; }
             .grade-D { background-color: #d35400; }
             .grade-F { background-color: #c0392b; }
-            .cert-ok { color: #27ae60; }
-            .cert-warn { color: #e67e22; }
-            .cert-danger { color: #c0392b; font-weight: bold; }
+            .trend { font-size: 1.2em; text-align: center; }
+            .trend-up { color: #c0392b; }
+            .trend-down { color: #27ae60; }
+            .trend-stable { color: #7f8c8d; }
+            .cert-badge { display: inline-block; padding: 4px 12px; border-radius: 15px; color: white; font-size: 0.9em; }
+            .cert-status-ok { background-color: #27ae60; }
+            .cert-status-warn { background-color: #f39c12; }
+            .cert-status-danger { background-color: #c0392b; }
+            .cert-status-na { background-color: #bdc3c7; }
             .footer { text-align: center; margin-top: 20px; font-size: 0.9em; color: #7f8c8d; }
         </style>
     </head>
@@ -518,6 +537,7 @@ def generate_html_summary(all_scans):
                     <th>Dernier Scan</th>
                     <th>Score</th>
                     <th>Note</th>
+                    <th>Tendance</th>
                     <th>Expiration du Certificat</th>
                 </tr>
             </thead>
@@ -526,20 +546,28 @@ def generate_html_summary(all_scans):
 
     for item in summary_data:
         grade_class = "grade-" + item['grade'].replace('+', '-plus') if item['grade'] != 'N/A' else ""
-        cert_status_class = 'cert-ok'
+
+        trend_class = "trend-stable"
+        if item['trend'] == '⬆️':
+            trend_class = "trend-up"
+        elif item['trend'] == '⬇️':
+            trend_class = "trend-down"
+
+        cert_status_class = 'cert-status-na'
         cert_text = "N/A"
         if item['cert_days_left'] is not None:
             if item['cert_days_left'] < 0:
-                cert_status_class = 'cert-danger'
-                cert_text = f"Expiré depuis {-item['cert_days_left']} jours"
+                cert_status_class = 'cert-status-danger'
+                cert_text = f"Expiré ({item['cert_exp'].strftime('%Y-%m-%d')})"
             elif item['cert_days_left'] <= 15:
-                cert_status_class = 'cert-danger'
-                cert_text = f"{item['cert_exp'].strftime('%Y-%m-%d')} (dans {item['cert_days_left']} jours)"
-            elif item['cert_days_left'] <= 30:
-                cert_status_class = 'cert-warn'
-                cert_text = f"{item['cert_exp'].strftime('%Y-%m-%d')} (dans {item['cert_days_left']} jours)"
+                cert_status_class = 'cert-status-danger'
+                cert_text = f"{item['cert_days_left']} jours"
+            elif item['cert_days_left'] <= 60:
+                cert_status_class = 'cert-status-warn'
+                cert_text = f"{item['cert_days_left']} jours"
             else:
-                cert_text = item['cert_exp'].strftime('%Y-%m-%d')
+                cert_status_class = 'cert-status-ok'
+                cert_text = f"{item['cert_days_left']} jours"
 
         html += f"""
                 <tr>
@@ -547,7 +575,8 @@ def generate_html_summary(all_scans):
                     <td>{item['last_scan']}</td>
                     <td>{item['score']}</td>
                     <td><span class="grade {grade_class}">{item['grade']}</span></td>
-                    <td class="{cert_status_class}">{cert_text}</td>
+                    <td class="trend {trend_class}">{item['trend']}</td>
+                    <td><span class="cert-badge {cert_status_class}">{cert_text}</span></td>
                 </tr>
         """
 
