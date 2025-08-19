@@ -197,3 +197,38 @@ python3 consolidator.py --list-expiring-certs 90
 
   - votresite.com                  Expire le: 15 September 2025 (dans 26 jours)
 ```
+
+#### 7. Générer des rapports d'actions ciblées (`--report`)
+Génère un rapport consolidé listant tous les sites affectés par un ou plusieurs types de vulnérabilités spécifiques. Cette commande est idéale pour planifier des vagues de corrections.
+
+```bash
+# Générer un rapport pour une seule vulnérabilité (DMARC)
+python3 consolidator.py --report dmarc
+
+# Générer un rapport pour plusieurs vulnérabilités
+python3 consolidator.py --report hsts spf http-redirect
+
+# Générer un rapport pour toutes les vulnérabilités supportées
+python3 consolidator.py --report all
+```
+*Exemple de sortie pour `python3 consolidator.py --report spf` :*
+```
+🔎 Génération du rapport d'actions pour : spf
+
+--- Rapport pour : SPF ---
+    Action recommandée : Ajoutez un enregistrement SPF à votre zone DNS...
+
+    Sites affectés :
+      - google.com
+-----------------------
+```
+
+Les types de rapports actuellement supportés sont :
+*   `dmarc`
+*   `spf`
+*   `hsts`
+*   `xfo` (X-Frame-Options)
+*   `xcto` (X-Content-Type-Options)
+*   `csp` (Content-Security-Policy)
+*   `js-libs` (Bibliothèques JavaScript obsolètes)
+*   `http-redirect` (Redirection HTTP vers HTTPS)
