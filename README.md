@@ -181,3 +181,19 @@ python3 consolidator.py --quick-wins
   - security_headers.en-tetes_securite.hsts.HSTS_MISSING
   - security_headers.en-tetes_securite.x-content-type-options.XCTO_MISSING
 ```
+
+#### 6. Lister les certificats qui expirent bientôt (`--list-expiring-certs`)
+Vérifie le dernier scan de chaque domaine et liste les certificats SSL/TLS qui expirent dans un certain nombre de jours.
+```bash
+# Affiche les certificats expirant dans les 30 prochains jours (défaut)
+python3 consolidator.py --list-expiring-certs
+
+# Affiche les certificats expirant dans les 90 prochains jours
+python3 consolidator.py --list-expiring-certs 90
+```
+*Exemple de sortie :*
+```
+📜 Certificats expirant dans les 30 prochains jours :
+
+  - votresite.com                  Expire le: 15 September 2025 (dans 26 jours)
+```

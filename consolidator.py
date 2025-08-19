@@ -57,6 +57,7 @@ def main():
     parser.add_argument("--quick-wins", metavar="DOMAIN", nargs='?', const="all", help="Identifie les vulnérabilités 'quick win' pour un domaine spécifique ou pour tous les domaines.")
     parser.add_argument("--status", action="store_true", help="Affiche l'état des scans par rapport à une liste de cibles.")
     parser.add_argument("--oldest", action="store_true", help="Affiche les scans les plus anciens.")
+    parser.add_argument("--list-expiring-certs", nargs='?', const=30, default=None, type=int, metavar='DAYS', help="Liste les certificats expirant bientôt (par défaut: 30 jours).")
 
     args = parser.parse_args()
 
@@ -80,6 +81,8 @@ def main():
         display_scan_status(all_scans)
     elif args.oldest:
         display_oldest_scans(all_scans)
+    elif args.list_expiring_certs is not None:
+        display_expiring_certificates(all_scans, args.list_expiring_certs)
     else:
         # Si aucune commande n'est spécifiée, afficher un résumé
         print(f"✅ {len(all_scans)} rapport(s) de scan chargé(s).")
@@ -268,6 +271,56 @@ def display_quick_wins(all_scans, domain_filter):
 
     if not found_any:
         print("Aucun 'quick win' identifié dans les derniers scans.")
+
+
+def display_expiring_certificates(all_scans, days_threshold):
+    """Affiche les certificats SSL/TLS qui expirent bientôt."""
+    today = datetime.now()
+    expiring_certs = []
+
+    # Obtenir la liste des domaines uniques à partir des scans
+    unique_domains = sorted(list({s['domain'] for s in all_scans}))
+
+    for domain in unique_domains:
+        # Trouver le scan le plus récent pour ce domaine
+        most_recent_scan = next((s for s in sorted(all_scans, key=lambda x: x['date'], reverse=True) if s['domain'] == domain), None)
+        if not most_recent_scan:
+            continue
+
+        cert_info = most_recent_scan['data'].get('ssl_certificate', {})
+        exp_date_str = cert_info.get('date_expiration')
+
+        if not exp_date_str:
+            continue
+
+        try:
+            exp_date = datetime.strptime(exp_date_str, '%Y-%m-%d')
+            days_left = (exp_date - today).days
+
+            if 0 <= days_left <= days_threshold:
+                expiring_certs.append({
+                    "domain": domain,
+                    "exp_date": exp_date,
+                    "days_left": days_left
+                })
+        except ValueError:
+            print(f"Avertissement : Format de date invalide pour le certificat de '{domain}': '{exp_date_str}'")
+            continue
+
+    print(f"📜 Certificats expirant dans les {days_threshold} prochains jours :\n")
+
+    if not expiring_certs:
+        print("Aucun certificat n'expire dans la période spécifiée. ✅")
+        return
+
+    # Trie les certificats par date d'expiration (le plus proche en premier)
+    expiring_certs.sort(key=lambda x: x['days_left'])
+
+    for cert in expiring_certs:
+        date_str = cert['exp_date'].strftime('%d %B %Y')
+        days = cert['days_left']
+        plural_s = 's' if days > 1 else ''
+        print(f"  - {cert['domain'].ljust(30)} Expire le: {date_str} (dans {days} jour{plural_s})")
 
 
 if __name__ == "__main__":
