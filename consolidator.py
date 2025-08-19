@@ -9,6 +9,10 @@ import argparse
 import json
 import os
 from datetime import datetime
+import matplotlib
+matplotlib.use('Agg')  # Use non-interactive backend
+import matplotlib.pyplot as plt
+
 
 SCAN_REPORTS_DIR = "scans/"
 
@@ -91,6 +95,8 @@ def main():
     parser.add_argument("--oldest", action="store_true", help="Affiche les scans les plus anciens.")
     parser.add_argument("--list-expiring-certs", nargs='?', const=30, default=None, type=int, metavar='DAYS', help="Liste les certificats expirant bientôt (par défaut: 30 jours).")
     parser.add_argument("--report", nargs='+', metavar='TYPE', help="Génère un rapport d'actions pour un ou plusieurs types de vulnérabilités (ex: dmarc, hsts, ou 'all').")
+    parser.add_argument("--summary-html", action="store_true", help="Génère un rapport de synthèse HTML pour tous les sites cibles.")
+    parser.add_argument("--graph", metavar="DOMAIN", help="Génère un graphique d'évolution du score pour un domaine.")
 
     args = parser.parse_args()
 
@@ -118,6 +124,10 @@ def main():
         display_expiring_certificates(all_scans, args.list_expiring_certs)
     elif args.report:
         generate_vulnerability_report(all_scans, args.report)
+    elif args.summary_html:
+        generate_html_summary(all_scans)
+    elif args.graph:
+        generate_evolution_graph(all_scans, args.graph)
     else:
         # Si aucune commande n'est spécifiée, afficher un résumé
         print(f"✅ {len(all_scans)} rapport(s) de scan chargé(s).")
@@ -422,6 +432,171 @@ def generate_vulnerability_report(all_scans, report_types):
 
     if not found_any_issue:
         print("🎉 Félicitations ! Aucun des problèmes recherchés n'a été trouvé sur les derniers scans de vos domaines.")
+
+
+def generate_html_summary(all_scans):
+    """Génère un rapport de synthèse HTML pour tous les sites cibles."""
+
+    try:
+        with open('targets.txt', 'r', encoding='utf-8') as f:
+            targets = [line.strip() for line in f if line.strip()]
+    except FileNotFoundError:
+        print("Le fichier 'targets.txt' est introuvable. Veuillez le créer pour générer le rapport de synthèse.")
+        return
+
+    summary_data = []
+    today = datetime.now()
+
+    for target in targets:
+        most_recent_scan = next((s for s in sorted(all_scans, key=lambda x: x['date'], reverse=True) if s['domain'] == target), None)
+
+        if most_recent_scan:
+            cert_info = most_recent_scan['data'].get('ssl_certificate', {})
+            exp_date_str = cert_info.get('date_expiration')
+            exp_date_obj = None
+            days_left = None
+            if exp_date_str:
+                try:
+                    exp_date_obj = datetime.strptime(exp_date_str, '%Y-%m-%d')
+                    days_left = (exp_date_obj - today).days
+                except ValueError:
+                    pass # La date est invalide, on la laisse à None
+
+            summary_data.append({
+                "domain": target,
+                "last_scan": most_recent_scan['date'].strftime('%Y-%m-%d'),
+                "score": most_recent_scan['data'].get('score_final', 'N/A'),
+                "grade": most_recent_scan['data'].get('note', 'N/A'),
+                "cert_exp": exp_date_obj,
+                "cert_days_left": days_left
+            })
+        else:
+            summary_data.append({
+                "domain": target,
+                "last_scan": "Jamais",
+                "score": "N/A",
+                "grade": "N/A",
+                "cert_exp": None,
+                "cert_days_left": None
+            })
+
+    # Générer le HTML
+    html = """
+    <!DOCTYPE html>
+    <html lang="fr">
+    <head>
+        <meta charset="utf-8">
+        <title>Rapport de Synthèse de Sécurité</title>
+        <style>
+            body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; line-height: 1.6; color: #333; background-color: #f4f4f9; margin: 0; padding: 20px; }
+            h1 { color: #2c3e50; text-align: center; }
+            table { width: 100%; border-collapse: collapse; margin-top: 20px; box-shadow: 0 2px 15px rgba(0,0,0,0.1); background-color: #fff; }
+            th, td { padding: 12px 15px; text-align: left; border-bottom: 1px solid #ddd; }
+            th { background-color: #4a69bd; color: white; }
+            tr:nth-child(even) { background-color: #f2f2f2; }
+            tr:hover { background-color: #e2e8f0; }
+            .grade { font-weight: bold; padding: 5px 10px; border-radius: 15px; color: white; text-align: center; display: inline-block; min-width: 30px; }
+            .grade-A-plus { background-color: #27ae60; }
+            .grade-A { background-color: #2ecc71; }
+            .grade-B { background-color: #f1c40f; }
+            .grade-C { background-color: #e67e22; }
+            .grade-D { background-color: #d35400; }
+            .grade-F { background-color: #c0392b; }
+            .cert-ok { color: #27ae60; }
+            .cert-warn { color: #e67e22; }
+            .cert-danger { color: #c0392b; font-weight: bold; }
+            .footer { text-align: center; margin-top: 20px; font-size: 0.9em; color: #7f8c8d; }
+        </style>
+    </head>
+    <body>
+        <h1>Rapport de Synthèse de Sécurité</h1>
+        <p class="footer">Généré le """ + today.strftime('%d %B %Y à %H:%M:%S') + """</p>
+        <table>
+            <thead>
+                <tr>
+                    <th>Domaine</th>
+                    <th>Dernier Scan</th>
+                    <th>Score</th>
+                    <th>Note</th>
+                    <th>Expiration du Certificat</th>
+                </tr>
+            </thead>
+            <tbody>
+    """
+
+    for item in summary_data:
+        grade_class = "grade-" + item['grade'].replace('+', '-plus') if item['grade'] != 'N/A' else ""
+        cert_status_class = 'cert-ok'
+        cert_text = "N/A"
+        if item['cert_days_left'] is not None:
+            if item['cert_days_left'] < 0:
+                cert_status_class = 'cert-danger'
+                cert_text = f"Expiré depuis {-item['cert_days_left']} jours"
+            elif item['cert_days_left'] <= 15:
+                cert_status_class = 'cert-danger'
+                cert_text = f"{item['cert_exp'].strftime('%Y-%m-%d')} (dans {item['cert_days_left']} jours)"
+            elif item['cert_days_left'] <= 30:
+                cert_status_class = 'cert-warn'
+                cert_text = f"{item['cert_exp'].strftime('%Y-%m-%d')} (dans {item['cert_days_left']} jours)"
+            else:
+                cert_text = item['cert_exp'].strftime('%Y-%m-%d')
+
+        html += f"""
+                <tr>
+                    <td><strong>{item['domain']}</strong></td>
+                    <td>{item['last_scan']}</td>
+                    <td>{item['score']}</td>
+                    <td><span class="grade {grade_class}">{item['grade']}</span></td>
+                    <td class="{cert_status_class}">{cert_text}</td>
+                </tr>
+        """
+
+    html += """
+            </tbody>
+        </table>
+    </body>
+    </html>
+    """
+
+    try:
+        with open('summary_report.html', 'w', encoding='utf-8') as f:
+            f.write(html)
+        print("✅ Rapport de synthèse HTML 'summary_report.html' généré avec succès.")
+    except IOError as e:
+        print(f"❌ Erreur lors de l'écriture du rapport HTML : {e}")
+
+
+def generate_evolution_graph(all_scans, domain):
+    """Génère un graphique d'évolution du score pour un domaine spécifique."""
+    scans_for_domain = sorted(
+        [s for s in all_scans if s['domain'] == domain],
+        key=lambda x: x['date']
+    )
+
+    if len(scans_for_domain) < 2:
+        print(f"Moins de deux scans trouvés pour '{domain}'. Impossible de générer un graphique d'évolution.")
+        return
+
+    dates = [s['date'] for s in scans_for_domain]
+    scores = [s['data'].get('score_final', 0) for s in scans_for_domain]
+
+    plt.figure(figsize=(10, 6))
+    plt.plot(dates, scores, marker='o', linestyle='-', color='b')
+
+    plt.title(f"Évolution du Score de Sécurité pour {domain}")
+    plt.xlabel("Date du Scan")
+    plt.ylabel("Score de Dangerosité (plus bas = mieux)")
+    plt.grid(True, which='both', linestyle='--', linewidth=0.5)
+    plt.ylim(bottom=0, top=max(scores) + 10) # Y-axis starts at 0
+    plt.gcf().autofmt_xdate() # Format dates nicely
+
+    filename = f"{domain}_evolution.png"
+    try:
+        plt.savefig(filename, bbox_inches='tight')
+        print(f"✅ Graphique d'évolution '{filename}' généré avec succès.")
+    except IOError as e:
+        print(f"❌ Erreur lors de la sauvegarde du graphique : {e}")
+    plt.close()
 
 
 if __name__ == "__main__":
