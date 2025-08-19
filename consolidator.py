@@ -175,12 +175,17 @@ def _extract_vulnerabilities(scan_data):
 
     def find_issues(data, path=""):
         if isinstance(data, dict):
-            # Si un item a un 'statut' et un 'remediation_id', on le considère comme une vulnérabilité potentielle
-            if 'statut' in data and data['statut'] in ['ERROR', 'WARNING'] and 'remediation_id' in data:
-                # Créer un identifiant unique pour la vulnérabilité
-                vuln_id = f"{path}.{data['remediation_id']}"
-                vulnerabilities.add(vuln_id)
+            # Une vulnérabilité est un dictionnaire qui contient un remediation_id
+            if 'remediation_id' in data:
+                # On vérifie aussi qu'il ne s'agit pas d'un cas "réussi" qui aurait quand même un ID
+                # (certains objets comme les cookies en ont)
+                is_successful_case = data.get('present') is True or data.get('statut') == 'SUCCESS'
+                if not is_successful_case:
+                    vuln_id = f"{path}.{data['remediation_id']}"
+                    vulnerabilities.add(vuln_id)
 
+            # On continue la récursion même si on a trouvé une vulnérabilité
+            # pour les cas où des vulnérabilités sont nichées.
             for key, value in data.items():
                 find_issues(value, f"{path}.{key}" if path else key)
         elif isinstance(data, list):
@@ -283,12 +288,43 @@ QUICK_WIN_REMEDIATION_IDS = {
     "SERVER_HEADER_VISIBLE"
 }
 
+def _get_quick_wins(scan_data):
+    """Retourne un set de vulnérabilités 'quick win' à partir des données d'un scan."""
+    if not scan_data:
+        return set()
+    vulns = _extract_vulnerabilities(scan_data)
+    return {v for v in vulns if any(rem_id in v for rem_id in QUICK_WIN_REMEDIATION_IDS)}
+
+def _count_critical_vulnerabilities(scan_data):
+    """Compte le nombre de vulnérabilités critiques ou élevées dans les données d'un scan."""
+    if not scan_data:
+        return 0
+    count = 0
+
+    def find_critical_issues(data):
+        nonlocal count
+        if isinstance(data, dict):
+            # Une vulnérabilité critique est un dictionnaire qui a une criticité haute/critique
+            # et qui n'est pas un cas de succès.
+            if data.get('criticite') in ['CRITICAL', 'HIGH']:
+                is_successful_case = data.get('present') is True or data.get('statut') == 'SUCCESS'
+                if not is_successful_case:
+                    count += 1
+
+            for value in data.values():
+                find_critical_issues(value)
+        elif isinstance(data, list):
+            for item in data:
+                find_critical_issues(item)
+
+    find_critical_issues(scan_data)
+    return count
+
 def display_quick_wins(all_scans, domain_filter):
     """Identifie et affiche les vulnérabilités 'quick win'."""
 
     target_domains = []
     if domain_filter == 'all':
-        # Obtenir la liste unique de domaines depuis les scans
         target_domains = sorted(list({s['domain'] for s in all_scans}))
     else:
         target_domains = [domain_filter]
@@ -304,8 +340,7 @@ def display_quick_wins(all_scans, domain_filter):
                 print(f"Aucun scan trouvé pour '{domain}'.")
             continue
 
-        vulns = _extract_vulnerabilities(most_recent_scan['data'])
-        quick_wins = {v for v in vulns if any(rem_id in v for rem_id in QUICK_WIN_REMEDIATION_IDS)}
+        quick_wins = _get_quick_wins(most_recent_scan['data'])
 
         if quick_wins:
             found_any = True
@@ -473,12 +508,18 @@ def generate_html_summary(all_scans):
                 elif score_new > score_old:
                     trend = "⬆️" # Régression
 
+            # Calculer les nouvelles métriques
+            critical_vulns_count = _count_critical_vulnerabilities(most_recent_scan['data'])
+            quick_wins_count = len(_get_quick_wins(most_recent_scan['data']))
+
             summary_data.append({
                 "domain": target,
                 "last_scan": most_recent_scan['date'].strftime('%Y-%m-%d'),
                 "score": most_recent_scan['data'].get('score_final', 'N/A'),
                 "grade": most_recent_scan['data'].get('note', 'N/A'),
                 "trend": trend,
+                "critical_vulns": critical_vulns_count,
+                "quick_wins": quick_wins_count,
                 "cert_exp": exp_date_obj,
                 "cert_days_left": days_left
             })
@@ -489,6 +530,8 @@ def generate_html_summary(all_scans):
                 "score": "N/A",
                 "grade": "N/A",
                 "trend": "N/A",
+                "critical_vulns": "N/A",
+                "quick_wins": "N/A",
                 "cert_exp": None,
                 "cert_days_left": None
             })
@@ -519,6 +562,9 @@ def generate_html_summary(all_scans):
             .trend-up { color: #c0392b; }
             .trend-down { color: #27ae60; }
             .trend-stable { color: #7f8c8d; }
+            .count-badge { display: inline-block; padding: 4px 10px; border-radius: 15px; color: white; font-size: 0.9em; font-weight: bold; }
+            .count-critical { background-color: #c0392b; }
+            .count-quickwin { background-color: #3498db; }
             .cert-badge { display: inline-block; padding: 4px 12px; border-radius: 15px; color: white; font-size: 0.9em; }
             .cert-status-ok { background-color: #27ae60; }
             .cert-status-warn { background-color: #f39c12; }
@@ -538,6 +584,8 @@ def generate_html_summary(all_scans):
                     <th>Score</th>
                     <th>Note</th>
                     <th>Tendance</th>
+                    <th>Vulns Crit/High</th>
+                    <th>Quick Wins</th>
                     <th>Expiration du Certificat</th>
                 </tr>
             </thead>
@@ -556,18 +604,21 @@ def generate_html_summary(all_scans):
         cert_status_class = 'cert-status-na'
         cert_text = "N/A"
         if item['cert_days_left'] is not None:
-            if item['cert_days_left'] < 0:
+            date_str = item['cert_exp'].strftime('%Y-%m-%d')
+            days_left = item['cert_days_left']
+
+            if days_left < 0:
                 cert_status_class = 'cert-status-danger'
-                cert_text = f"Expiré ({item['cert_exp'].strftime('%Y-%m-%d')})"
-            elif item['cert_days_left'] <= 15:
-                cert_status_class = 'cert-status-danger'
-                cert_text = f"{item['cert_days_left']} jours"
-            elif item['cert_days_left'] <= 60:
-                cert_status_class = 'cert-status-warn'
-                cert_text = f"{item['cert_days_left']} jours"
+                cert_text = f"Expiré depuis {-days_left} jours"
             else:
-                cert_status_class = 'cert-status-ok'
-                cert_text = f"{item['cert_days_left']} jours"
+                plural_s = 's' if days_left > 1 else ''
+                cert_text = f"{date_str} ({days_left} jour{plural_s})"
+                if days_left <= 15:
+                    cert_status_class = 'cert-status-danger'
+                elif days_left <= 60:
+                    cert_status_class = 'cert-status-warn'
+                else:
+                    cert_status_class = 'cert-status-ok'
 
         html += f"""
                 <tr>
@@ -576,6 +627,8 @@ def generate_html_summary(all_scans):
                     <td>{item['score']}</td>
                     <td><span class="grade {grade_class}">{item['grade']}</span></td>
                     <td class="trend {trend_class}">{item['trend']}</td>
+                    <td style="text-align: center;"><span class="count-badge count-critical">{item['critical_vulns']}</span></td>
+                    <td style="text-align: center;"><span class="count-badge count-quickwin">{item['quick_wins']}</span></td>
                     <td><span class="cert-badge {cert_status_class}">{cert_text}</span></td>
                 </tr>
         """

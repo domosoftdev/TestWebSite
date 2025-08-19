@@ -23,6 +23,9 @@
             .trend-up { color: #c0392b; }
             .trend-down { color: #27ae60; }
             .trend-stable { color: #7f8c8d; }
+            .count-badge { display: inline-block; padding: 4px 10px; border-radius: 15px; color: white; font-size: 0.9em; font-weight: bold; }
+            .count-critical { background-color: #c0392b; }
+            .count-quickwin { background-color: #3498db; }
             .cert-badge { display: inline-block; padding: 4px 12px; border-radius: 15px; color: white; font-size: 0.9em; }
             .cert-status-ok { background-color: #27ae60; }
             .cert-status-warn { background-color: #f39c12; }
@@ -33,7 +36,7 @@
     </head>
     <body>
         <h1>Rapport de Synthèse de Sécurité</h1>
-        <p class="footer">Généré le 19 August 2025 à 19:04:52</p>
+        <p class="footer">Généré le 19 August 2025 à 20:03:04</p>
         <table>
             <thead>
                 <tr>
@@ -42,6 +45,8 @@
                     <th>Score</th>
                     <th>Note</th>
                     <th>Tendance</th>
+                    <th>Vulns Crit/High</th>
+                    <th>Quick Wins</th>
                     <th>Expiration du Certificat</th>
                 </tr>
             </thead>
@@ -50,10 +55,12 @@
                 <tr>
                     <td><strong>google.com</strong></td>
                     <td>2025-08-18</td>
-                    <td>10</td>
-                    <td><span class="grade grade-A">A</span></td>
-                    <td class="trend trend-down">⬇️</td>
-                    <td><span class="cert-badge cert-status-ok">133 jours</span></td>
+                    <td>53</td>
+                    <td><span class="grade grade-D">D</span></td>
+                    <td class="trend trend-stable">➡️</td>
+                    <td style="text-align: center;"><span class="count-badge count-critical">5</span></td>
+                    <td style="text-align: center;"><span class="count-badge count-quickwin">7</span></td>
+                    <td><span class="cert-badge cert-status-warn">2025-09-29 (40 jours)</span></td>
                 </tr>
 
                 <tr>
@@ -62,6 +69,8 @@
                     <td>N/A</td>
                     <td><span class="grade ">N/A</span></td>
                     <td class="trend trend-stable">N/A</td>
+                    <td style="text-align: center;"><span class="count-badge count-critical">N/A</span></td>
+                    <td style="text-align: center;"><span class="count-badge count-quickwin">N/A</span></td>
                     <td><span class="cert-badge cert-status-na">N/A</span></td>
                 </tr>
 
