@@ -604,18 +604,21 @@ def generate_html_summary(all_scans):
         cert_status_class = 'cert-status-na'
         cert_text = "N/A"
         if item['cert_days_left'] is not None:
-            if item['cert_days_left'] < 0:
+            date_str = item['cert_exp'].strftime('%Y-%m-%d')
+            days_left = item['cert_days_left']
+
+            if days_left < 0:
                 cert_status_class = 'cert-status-danger'
-                cert_text = f"Expiré ({item['cert_exp'].strftime('%Y-%m-%d')})"
-            elif item['cert_days_left'] <= 15:
-                cert_status_class = 'cert-status-danger'
-                cert_text = f"{item['cert_days_left']} jours"
-            elif item['cert_days_left'] <= 60:
-                cert_status_class = 'cert-status-warn'
-                cert_text = f"{item['cert_days_left']} jours"
+                cert_text = f"Expiré depuis {-days_left} jours"
             else:
-                cert_status_class = 'cert-status-ok'
-                cert_text = f"{item['cert_days_left']} jours"
+                plural_s = 's' if days_left > 1 else ''
+                cert_text = f"{date_str} ({days_left} jour{plural_s})"
+                if days_left <= 15:
+                    cert_status_class = 'cert-status-danger'
+                elif days_left <= 60:
+                    cert_status_class = 'cert-status-warn'
+                else:
+                    cert_status_class = 'cert-status-ok'
 
         html += f"""
                 <tr>
