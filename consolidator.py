@@ -12,6 +12,38 @@ from datetime import datetime
 
 SCAN_REPORTS_DIR = "scans/"
 
+# Copied from security_checker.py to make the tool self-contained
+REMEDIATION_ADVICE = {
+    "CERT_EXPIRED": { "default": "Renouvelez votre certificat SSL/TLS immédiatement." },
+    "CERT_VERIFY_FAILED": { "default": "Vérifiez que votre chaîne de certificats est complète (certificats intermédiaires) et que le certificat n'est pas auto-signé." },
+    "TLS_OBSOLETE": { "description": "Désactivez les protocoles SSL/TLS obsolètes.", "nginx": "Dans votre bloc server, utilisez : ssl_protocols TLSv1.2 TLSv1.3;", "apache": "Dans votre configuration SSL, utilisez : SSLProtocol all -SSLv3 -TLSv1 -TLSv1.1", "default": "Consultez la documentation de votre serveur pour désactiver SSLv3, TLSv1.0 et TLSv1.1." },
+    "NO_HTTPS_REDIRECT": { "nginx": "Dans votre bloc server pour le port 80, utilisez : return 301 https://$host$request_uri;", "apache": "Utilisez mod_rewrite pour forcer la redirection vers HTTPS.", "default": "Configurez votre serveur web pour forcer la redirection de tout le trafic HTTP vers HTTPS." },
+    "DMARC_MISSING": { "default": "Ajoutez un enregistrement DMARC à votre zone DNS pour protéger contre l'usurpation d'e-mail. Exemple : 'v=DMARC1; p=none; rua=mailto:dmarc-reports@votre-domaine.com;'" },
+    "SPF_MISSING": { "default": "Ajoutez un enregistrement SPF à votre zone DNS pour spécifier les serveurs autorisés à envoyer des e-mails pour votre domaine. Exemple : 'v=spf1 include:_spf.google.com ~all'" },
+    "COOKIE_NO_SECURE": { "default": "Ajoutez l'attribut 'Secure' à tous vos cookies pour vous assurer qu'ils ne sont envoyés que sur des connexions HTTPS." },
+    "COOKIE_NO_HTTPONLY": { "default": "Ajoutez l'attribut 'HttpOnly' à vos cookies de session pour empêcher leur accès via JavaScript." },
+    "COOKIE_NO_SAMESITE": { "default": "Ajoutez l'attribut 'SameSite=Strict' ou 'SameSite=Lax' à vos cookies pour vous protéger contre les attaques CSRF." },
+    "HSTS_MISSING": { "nginx": "add_header Strict-Transport-Security 'max-age=31536000; includeSubDomains; preload';", "apache": "Header always set Strict-Transport-Security 'max-age=31536000; includeSubDomains; preload'", "default": "Implémentez l'en-tête HSTS avec un 'max-age' d'au moins 6 mois (15552000 secondes)." },
+    "XFO_MISSING": { "nginx": "add_header X-Frame-Options 'SAMEORIGIN';", "apache": "Header always set X-Frame-Options 'SAMEORIGIN'", "default": "Ajoutez l'en-tête 'X-Frame-Options: SAMEORIGIN' ou 'DENY' pour vous protéger du clickjacking." },
+    "XCTO_MISSING": { "nginx": "add_header X-Content-Type-Options 'nosniff';", "apache": "Header always set X-Content-Type-Options 'nosniff'", "default": "Ajoutez l'en-tête 'X-Content-Type-Options: nosniff'." },
+    "CSP_MISSING": { "default": "Envisagez d'implémenter une Content Security Policy (CSP) pour une défense en profondeur contre les attaques par injection de script (XSS)." },
+    "SERVER_HEADER_VISIBLE": { "nginx": "Dans votre configuration nginx, ajoutez 'server_tokens off;'.", "apache": "Dans votre configuration apache, ajoutez 'ServerTokens Prod'.", "default": "Supprimez ou masquez les en-têtes qui révèlent la version de votre serveur." },
+    "JS_LIB_OBSOLETE": { "default": "Une ou plusieurs bibliothèques JavaScript sont obsolètes. Mettez-les à jour vers leur dernière version stable pour corriger les vulnérabilités connues." },
+    "WP_CONFIG_BAK_EXPOSED": { "default": "Supprimez immédiatement le fichier de sauvegarde de configuration WordPress exposé publiquement." },
+    "WP_USER_ENUM_ENABLED": { "default": "Empêchez l'énumération des utilisateurs sur WordPress, par exemple en utilisant un plugin de sécurité ou en ajoutant des règles de réécriture." }
+}
+
+SUPPORTED_REPORTS = {
+    "dmarc": "DMARC_MISSING",
+    "spf": "SPF_MISSING",
+    "hsts": "HSTS_MISSING",
+    "xfo": "XFO_MISSING",
+    "xcto": "XCTO_MISSING",
+    "csp": "CSP_MISSING",
+    "js-libs": "JS_LIB_OBSOLETE",
+    "http-redirect": "NO_HTTPS_REDIRECT"
+}
+
 def load_scan_results():
     """
     Charge tous les rapports de scan JSON depuis le répertoire `scans/`.
@@ -58,6 +90,7 @@ def main():
     parser.add_argument("--status", action="store_true", help="Affiche l'état des scans par rapport à une liste de cibles.")
     parser.add_argument("--oldest", action="store_true", help="Affiche les scans les plus anciens.")
     parser.add_argument("--list-expiring-certs", nargs='?', const=30, default=None, type=int, metavar='DAYS', help="Liste les certificats expirant bientôt (par défaut: 30 jours).")
+    parser.add_argument("--report", nargs='+', metavar='TYPE', help="Génère un rapport d'actions pour un ou plusieurs types de vulnérabilités (ex: dmarc, hsts, ou 'all').")
 
     args = parser.parse_args()
 
@@ -83,6 +116,8 @@ def main():
         display_oldest_scans(all_scans)
     elif args.list_expiring_certs is not None:
         display_expiring_certificates(all_scans, args.list_expiring_certs)
+    elif args.report:
+        generate_vulnerability_report(all_scans, args.report)
     else:
         # Si aucune commande n'est spécifiée, afficher un résumé
         print(f"✅ {len(all_scans)} rapport(s) de scan chargé(s).")
@@ -321,6 +356,72 @@ def display_expiring_certificates(all_scans, days_threshold):
         days = cert['days_left']
         plural_s = 's' if days > 1 else ''
         print(f"  - {cert['domain'].ljust(30)} Expire le: {date_str} (dans {days} jour{plural_s})")
+
+
+def generate_vulnerability_report(all_scans, report_types):
+    """Génère un rapport listant les sites affectés par des vulnérabilités spécifiques."""
+
+    # Gérer le mot-clé 'all'
+    if 'all' in [rt.lower() for rt in report_types]:
+        reports_to_run = list(SUPPORTED_REPORTS.keys())
+    else:
+        # Valider les types de rapports demandés
+        reports_to_run = []
+        for rt in report_types:
+            if rt.lower() in SUPPORTED_REPORTS:
+                reports_to_run.append(rt.lower())
+            else:
+                print(f"Avertissement : Le type de rapport '{rt}' n'est pas supporté. Les types supportés sont : {', '.join(SUPPORTED_REPORTS.keys())}")
+        if not reports_to_run:
+            print("Aucun rapport valide à générer.")
+            return
+
+    print(f"🔎 Génération du rapport d'actions pour : {', '.join(reports_to_run)}\n")
+
+    # Obtenir la liste des domaines uniques à partir des scans
+    unique_domains = sorted(list({s['domain'] for s in all_scans}))
+
+    # Structurer les résultats par type de vulnérabilité
+    results = {report_type: [] for report_type in reports_to_run}
+
+    for domain in unique_domains:
+        # Trouver le scan le plus récent pour ce domaine
+        most_recent_scan = next((s for s in sorted(all_scans, key=lambda x: x['date'], reverse=True) if s['domain'] == domain), None)
+        if not most_recent_scan:
+            continue
+
+        # Extraire les vulnérabilités de ce scan
+        vulnerabilities = _extract_vulnerabilities(most_recent_scan['data'])
+
+        # Vérifier si le domaine est affecté par les vulnérabilités demandées
+        for report_type in reports_to_run:
+            remediation_id = SUPPORTED_REPORTS[report_type]
+            # Nous vérifions si un identifiant de vulnérabilité contient le remediation_id
+            # C'est plus flexible que une égalité stricte
+            if any(remediation_id in v_id for v_id in vulnerabilities):
+                results[report_type].append(domain)
+
+    # Afficher le rapport
+    found_any_issue = False
+    for report_type, affected_domains in results.items():
+        remediation_id = SUPPORTED_REPORTS[report_type]
+        advice = REMEDIATION_ADVICE.get(remediation_id, {}).get('default', 'Aucun conseil de remédiation disponible.')
+
+        print(f"--- Rapport pour : {report_type.upper()} ---")
+        print(f"    Action recommandée : {advice}\n")
+
+        if affected_domains:
+            found_any_issue = True
+            print("    Sites affectés :")
+            for domain in sorted(affected_domains):
+                print(f"      - {domain}")
+        else:
+            print("    ✅ Aucun site affecté pour ce type de vulnérabilité.")
+        print("-" * (20 + len(report_type)))
+        print()
+
+    if not found_any_issue:
+        print("🎉 Félicitations ! Aucun des problèmes recherchés n'a été trouvé sur les derniers scans de vos domaines.")
 
 
 if __name__ == "__main__":
