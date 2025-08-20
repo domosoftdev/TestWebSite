@@ -5,3 +5,4 @@ beautifulsoup4
 packaging
 lxml
 python-whois
+matplotlib
