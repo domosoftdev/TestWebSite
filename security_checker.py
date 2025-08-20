@@ -28,6 +28,7 @@ import dns.resolver
 from bs4 import BeautifulSoup
 import re
 from packaging import version
+import whois
 
 SEVERITY_SCORES = {
     "CRITICAL": 10,
@@ -320,6 +321,52 @@ def check_wordpress_specifics(hostname):
     except requests.exceptions.RequestException: results['plugin_enum'] = {"statut": "INFO", "criticite": "INFO", "message": "Erreur réseau lors de l'énumération des plugins."}
     return results
 
+def check_whois_info(hostname):
+    """
+    Récupère les informations WHOIS pour un nom de domaine donné.
+    """
+    try:
+        w = whois.whois(hostname)
+
+        # Normaliser les dates en chaînes de caractères
+        creation_date = w.creation_date
+        if isinstance(creation_date, list):
+            creation_date = creation_date[0] if creation_date else None
+        if hasattr(creation_date, 'isoformat'):
+            creation_date = creation_date.isoformat()
+
+        expiration_date = w.expiration_date
+        if isinstance(expiration_date, list):
+            expiration_date = expiration_date[0] if expiration_date else None
+        if hasattr(expiration_date, 'isoformat'):
+            expiration_date = expiration_date.isoformat()
+
+        # Normaliser les statuts et serveurs de noms
+        domain_status = w.status
+        if isinstance(domain_status, list):
+            domain_status = ", ".join(domain_status)
+
+        name_servers = w.name_servers
+        if isinstance(name_servers, list):
+            name_servers = ", ".join(name_servers)
+
+        return {
+            "statut": "SUCCESS",
+            "registrar": w.registrar,
+            "creation_date": str(creation_date) if creation_date else "N/A",
+            "expiration_date": str(expiration_date) if expiration_date else "N/A",
+            "domain_status": domain_status if domain_status else "N/A",
+            "name_servers": name_servers if name_servers else "N/A",
+            "dnssec": "Activé" if w.dnssec else "Désactivé ou non trouvé",
+            "criticite": "INFO"
+        }
+    except Exception as e:
+        return {
+            "statut": "ERROR",
+            "message": f"Impossible de récupérer les informations WHOIS : {e}",
+            "criticite": "LOW"
+        }
+
 def generate_csv_report(results, hostname):
     date_str = datetime.now().strftime('%d%m%y'); filename = f"{hostname}_{date_str}.csv"
     header = ['Catégorie', 'Sous-catégorie', 'Statut', 'Criticité', 'Description', 'Vulnérabilités']
@@ -341,6 +388,30 @@ def generate_csv_report(results, hostname):
             'Vulnérabilités': ''
         })
 
+    # Cas spécial pour les informations WHOIS
+    whois_info = results.get('whois_info')
+    if whois_info:
+        if whois_info.get('statut') == 'SUCCESS':
+            for key, value in whois_info.items():
+                if key in ['statut', 'criticite']: continue
+                rows.append({
+                    'Catégorie': 'WHOIS',
+                    'Sous-catégorie': key.replace('_', ' ').title(),
+                    'Statut': 'INFO',
+                    'Criticité': 'INFO',
+                    'Description': str(value),
+                    'Vulnérabilités': ''
+                })
+        else:  # Gérer le cas d'erreur
+            rows.append({
+                'Catégorie': 'WHOIS',
+                'Sous-catégorie': 'Erreur de récupération',
+                'Statut': whois_info.get('statut'),
+                'Criticité': whois_info.get('criticite'),
+                'Description': whois_info.get('message'),
+                'Vulnérabilités': ''
+            })
+
     def flatten_data(category, sub_category, data):
         if isinstance(data, list):
             for item in data: flatten_data(category, sub_category, item)
@@ -359,7 +430,7 @@ def generate_csv_report(results, hostname):
                 if not data['samesite']['present']: flatten_data(category, f"{data['nom']} - samesite", data['samesite'])
 
     for key, res in results.items():
-        if key in ['hostname', 'score_final', 'note', 'ssl_certificate']: continue
+        if key in ['hostname', 'score_final', 'note', 'ssl_certificate', 'whois_info']: continue
         flatten_data(key.replace('_', ' ').title(), key, res)
     try:
         with open(filename, 'w', newline='', encoding='utf-8') as f:
@@ -391,6 +462,20 @@ def generate_html_report(results, hostname):
             remediation_id = data.get('remediation_id')
             if remediation_id and remediation_id in REMEDIATION_ADVICE:
                 html_content += f"<p class='remediation'>Action: {REMEDIATION_ADVICE[remediation_id].get('default', '')}</p>"
+            html_content += "</div>"
+        elif category == 'whois_info':
+            crit = data.get('criticite', 'INFO')
+            html_content += f"<div class='finding finding-{crit}'>"
+            if data.get('statut') == 'SUCCESS':
+                html_content += "<strong>Informations WHOIS récupérées</strong><br>"
+                html_content += f"<strong>Registrar:</strong> {data.get('registrar', 'N/A')}<br>"
+                html_content += f"<strong>Date de création:</strong> {data.get('creation_date', 'N/A')}<br>"
+                html_content += f"<strong>Date d'expiration:</strong> {data.get('expiration_date', 'N/A')}<br>"
+                html_content += f"<strong>Statut du domaine:</strong> {data.get('domain_status', 'N/A')}<br>"
+                html_content += f"<strong>Serveurs DNS:</strong> {data.get('name_servers', 'N/A')}<br>"
+                html_content += f"<strong>DNSSEC:</strong> {data.get('dnssec', 'N/A')}"
+            else:
+                html_content += f"<strong>Erreur WHOIS:</strong> {data.get('message', 'Erreur inconnue')}"
             html_content += "</div>"
         elif isinstance(data, list):
             for item in data:
@@ -518,6 +603,19 @@ def print_human_readable_report(results):
             icon = STATUS_ICONS.get(data.get('statut'), '❓'); print(f"  {icon} {crit_str(data.get('criticite'))} {data.get('message', '')}")
             if 'plugins' in data:
                 for plugin in data['plugins']: print(f"    - {plugin}")
+    if 'whois_info' in results:
+        print("\n--- Informations WHOIS ---")
+        whois_info = results['whois_info']
+        icon = STATUS_ICONS.get(whois_info.get('statut'), '❓')
+        message = whois_info.get('message', 'Données WHOIS récupérées.')
+        print(f"  {icon} {crit_str(whois_info.get('criticite'))} {message}")
+        if whois_info.get('statut') == 'SUCCESS':
+            print(f"    Registrar          : {whois_info.get('registrar', 'N/A')}")
+            print(f"    Date de création   : {whois_info.get('creation_date', 'N/A')}")
+            print(f"    Date d'expiration  : {whois_info.get('expiration_date', 'N/A')}")
+            print(f"    Statut du domaine  : {whois_info.get('domain_status', 'N/A')}")
+            print(f"    Serveurs DNS       : {whois_info.get('name_servers', 'N/A')}")
+            print(f"    DNSSEC             : {whois_info.get('dnssec', 'N/A')}")
     print("\n" + "="*50); print(" LÉGENDE DE LA NOTE :"); print("  A+ : Excellent (0 points)"); print("  A  : Bon (1-10 points)"); print("  B  : Moyen (11-20 points)"); print("  C  : Médiocre (21-40 points)"); print("  D  : Mauvais (41-60 points)"); print("  F  : Critique (>60 points)"); print("="*50)
 
 def generate_json_report(results, hostname):
@@ -547,6 +645,7 @@ def main():
     if is_wordpress: all_results['wordpress_specifics'] = check_wordpress_specifics(hostname)
     all_results['dns_records'] = check_dns_records(hostname)
     all_results['js_libraries'] = check_js_libraries(hostname)
+    all_results['whois_info'] = check_whois_info(hostname)
     score, grade = calculate_score(all_results); all_results['score_final'] = score; all_results['note'] = grade
     print_human_readable_report(all_results)
     formats = [f.strip() for f in args.formats.lower().split(',') if f.strip()]
