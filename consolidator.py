@@ -512,6 +512,13 @@ def generate_html_summary(all_scans):
             critical_vulns_count = _count_critical_vulnerabilities(most_recent_scan['data'])
             quick_wins_count = len(_get_quick_wins(most_recent_scan['data']))
 
+            # Vérifier l'existence du rapport HTML détaillé
+            detailed_report_name = f"{target}_{most_recent_scan['date'].strftime('%d%m%y')}.html"
+            detailed_report_path = os.path.join(SCAN_REPORTS_DIR, detailed_report_name)
+            if not os.path.exists(detailed_report_path):
+                detailed_report_path = None
+
+
             summary_data.append({
                 "domain": target,
                 "last_scan": most_recent_scan['date'].strftime('%Y-%m-%d'),
@@ -521,7 +528,8 @@ def generate_html_summary(all_scans):
                 "critical_vulns": critical_vulns_count,
                 "quick_wins": quick_wins_count,
                 "cert_exp": exp_date_obj,
-                "cert_days_left": days_left
+                "cert_days_left": days_left,
+                "detailed_report_path": detailed_report_path
             })
         else:
             summary_data.append({
@@ -533,7 +541,8 @@ def generate_html_summary(all_scans):
                 "critical_vulns": "N/A",
                 "quick_wins": "N/A",
                 "cert_exp": None,
-                "cert_days_left": None
+                "cert_days_left": None,
+                "detailed_report_path": None
             })
 
     # Générer le HTML
@@ -564,6 +573,10 @@ def generate_html_summary(all_scans):
             .trend-up { color: #c0392b; }
             .trend-down { color: #27ae60; }
             .trend-stable { color: #7f8c8d; }
+            .report-btn { display: inline-block; padding: 4px 10px; border-radius: 5px; color: white; text-decoration: none; font-size: 0.9em; }
+            .report-btn-active { background-color: #5d6d7e; }
+            .report-btn-active:hover { background-color: #34495e; }
+            .report-btn-disabled { background-color: #bdc3c7; cursor: not-allowed; }
             .count-badge { display: inline-block; padding: 4px 10px; border-radius: 15px; color: white; font-size: 0.9em; font-weight: bold; }
             .count-critical { background-color: #c0392b; }
             .count-quickwin { background-color: #3498db; }
@@ -581,6 +594,7 @@ def generate_html_summary(all_scans):
         <table>
             <thead>
                 <tr>
+                    <th style="cursor: default;">Rapport</th>
                     <th>Domaine<span class="sort-indicator"></span></th>
                     <th>Dernier Scan<span class="sort-indicator"></span></th>
                     <th>Score<span class="sort-indicator"></span></th>
@@ -622,9 +636,16 @@ def generate_html_summary(all_scans):
                 else:
                     cert_status_class = 'cert-status-ok'
 
+        report_button = ""
+        if item['detailed_report_path']:
+            report_button = f'<a href="{item["detailed_report_path"]}" class="report-btn report-btn-active" target="_blank">Voir</a>'
+        else:
+            report_button = f'<span class="report-btn report-btn-disabled">N/A</span>'
+
         html += f"""
                 <tr>
-                    <td><strong>{item['domain']}</strong></td>
+                    <td style="text-align: center;">{report_button}</td>
+                    <td><a href="https://{item['domain']}" target="_blank"><strong>{item['domain']}</strong></a></td>
                     <td>{item['last_scan']}</td>
                     <td>{item['score']}</td>
                     <td><span class="grade {grade_class}">{item['grade']}</span></td>
@@ -640,17 +661,23 @@ def generate_html_summary(all_scans):
         </table>
     </body>
     <script>
-    const getCellValue = (tr, idx) => tr.children[idx].innerText || tr.children[idx].textContent;
+    const getCellValue = (tr, idx) => {
+        const cell = tr.children[idx];
+        // Handle cells with links or other nested elements
+        if (cell.querySelector('strong')) return cell.querySelector('strong').innerText;
+        if (cell.querySelector('span')) return cell.querySelector('span').innerText;
+        return cell.innerText || cell.textContent;
+    };
 
     const gradeOrder = {'A+': 0, 'A': 1, 'B': 2, 'C': 3, 'D': 4, 'F': 5, 'N/A': 6};
 
     const comparer = (idx, asc) => (a, b) => ((v1, v2) => {
-        // Custom sort for Grade column (index 3)
-        if (idx === 3) {
+        // Custom sort for Grade column (index 4)
+        if (idx === 4) {
             return gradeOrder[v1] - gradeOrder[v2];
         }
-        // Numeric sort for Score, Vulns, Quick Wins (indices 2, 5, 6)
-        if ([2, 5, 6].includes(idx)) {
+        // Numeric sort for Score, Vulns, Quick Wins (indices 3, 6, 7)
+        if ([3, 6, 7].includes(idx)) {
             const num1 = parseFloat(v1) || 0;
             const num2 = parseFloat(v2) || 0;
             return num1 - num2;
