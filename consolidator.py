@@ -548,7 +548,9 @@ def generate_html_summary(all_scans):
             h1 { color: #2c3e50; text-align: center; }
             table { width: 100%; border-collapse: collapse; margin-top: 20px; box-shadow: 0 2px 15px rgba(0,0,0,0.1); background-color: #fff; }
             th, td { padding: 12px 15px; text-align: left; border-bottom: 1px solid #ddd; }
-            th { background-color: #4a69bd; color: white; }
+            th { background-color: #4a69bd; color: white; cursor: pointer; user-select: none; }
+            th:hover { background-color: #3b5998; }
+            th .sort-indicator { float: right; color: #a9bce8; }
             tr:nth-child(even) { background-color: #f2f2f2; }
             tr:hover { background-color: #e2e8f0; }
             .grade { font-weight: bold; padding: 5px 10px; border-radius: 15px; color: white; text-align: center; display: inline-block; min-width: 30px; }
@@ -579,14 +581,14 @@ def generate_html_summary(all_scans):
         <table>
             <thead>
                 <tr>
-                    <th>Domaine</th>
-                    <th>Dernier Scan</th>
-                    <th>Score</th>
-                    <th>Note</th>
-                    <th>Tendance</th>
-                    <th>Vulns Crit/High</th>
-                    <th>Quick Wins</th>
-                    <th>Expiration du Certificat</th>
+                    <th>Domaine<span class="sort-indicator"></span></th>
+                    <th>Dernier Scan<span class="sort-indicator"></span></th>
+                    <th>Score<span class="sort-indicator"></span></th>
+                    <th>Note<span class="sort-indicator"></span></th>
+                    <th>Tendance<span class="sort-indicator"></span></th>
+                    <th>Vulns Crit/High<span class="sort-indicator"></span></th>
+                    <th>Quick Wins<span class="sort-indicator"></span></th>
+                    <th>Expiration du Certificat<span class="sort-indicator"></span></th>
                 </tr>
             </thead>
             <tbody>
@@ -637,6 +639,46 @@ def generate_html_summary(all_scans):
             </tbody>
         </table>
     </body>
+    <script>
+    const getCellValue = (tr, idx) => tr.children[idx].innerText || tr.children[idx].textContent;
+
+    const gradeOrder = {'A+': 0, 'A': 1, 'B': 2, 'C': 3, 'D': 4, 'F': 5, 'N/A': 6};
+
+    const comparer = (idx, asc) => (a, b) => ((v1, v2) => {
+        // Custom sort for Grade column (index 3)
+        if (idx === 3) {
+            return gradeOrder[v1] - gradeOrder[v2];
+        }
+        // Numeric sort for Score, Vulns, Quick Wins (indices 2, 5, 6)
+        if ([2, 5, 6].includes(idx)) {
+            const num1 = parseFloat(v1) || 0;
+            const num2 = parseFloat(v2) || 0;
+            return num1 - num2;
+        }
+        // Default text sort for others
+        return v1.toString().localeCompare(v2);
+    })(getCellValue(asc ? a : b, idx), getCellValue(asc ? b : a, idx));
+
+    document.querySelectorAll('th').forEach(th => th.addEventListener('click', (() => {
+        const table = th.closest('table');
+        const thIndex = Array.from(th.parentNode.children).indexOf(th);
+        const asc = th.dataset.sortDir === 'asc';
+
+        // Reset all indicators
+        table.querySelectorAll('th').forEach(otherTh => {
+            otherTh.querySelector('.sort-indicator').textContent = '';
+            delete otherTh.dataset.sortDir;
+        });
+
+        // Set indicator for current column
+        th.querySelector('.sort-indicator').textContent = asc ? ' ▲' : ' ▼';
+        th.dataset.sortDir = asc ? 'desc' : 'asc';
+
+        Array.from(table.querySelectorAll('tbody tr'))
+            .sort(comparer(thIndex, asc))
+            .forEach(tr => table.querySelector('tbody').appendChild(tr) );
+    })));
+    </script>
     </html>
     """
 
