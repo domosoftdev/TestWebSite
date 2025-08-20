@@ -714,7 +714,10 @@ def generate_html_summary(all_scans):
 
                 // Update headers state and indicators
                 table.querySelectorAll('th').forEach(otherTh => {
-                    otherTh.querySelector('.sort-indicator').textContent = '';
+                    const indicator = otherTh.querySelector('.sort-indicator');
+                    if (indicator) {
+                        indicator.textContent = '';
+                    }
                     delete otherTh.dataset.sortDir;
                 });
                 th.querySelector('.sort-indicator').textContent = newDirectionIsAsc ? ' ▲' : ' ▼';
