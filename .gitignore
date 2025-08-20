@@ -1,0 +1,11 @@
+# Fichiers de rapport générés
+summary_report.html
+*.png
+
+# Rapports de scan bruts
+scans/
+
+# Fichiers générés par l'OS ou l'éditeur
+.DS_Store
+__pycache__/
+*.pyc
