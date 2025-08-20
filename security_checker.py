@@ -92,8 +92,9 @@ def check_ssl_certificate(hostname):
                 subject = dict(x[0] for x in cert['subject'])
                 issuer = dict(x[0] for x in cert.get('issuer', []))
                 exp_date = datetime.strptime(cert['notAfter'], '%b %d %H:%M:%S %Y %Z')
-                result = {"sujet": subject.get('commonName', 'N/A'), "emetteur": issuer.get('commonName', 'N/A'), "date_expiration": exp_date.strftime('%Y-%m-%d')}
-                if exp_date < datetime.now():
+                jours_restants = (exp_date - datetime.now()).days
+                result = {"sujet": subject.get('commonName', 'N/A'), "emetteur": issuer.get('commonName', 'N/A'), "date_expiration": exp_date.strftime('%Y-%m-%d'), "jours_restants": jours_restants}
+                if jours_restants < 0:
                     result.update({"statut": "ERROR", "message": "Le certificat a expiré.", "criticite": "CRITICAL", "remediation_id": "CERT_EXPIRED"})
                 else:
                     result.update({"statut": "SUCCESS", "message": "Le certificat est valide.", "criticite": "INFO"})
@@ -323,6 +324,23 @@ def generate_csv_report(results, hostname):
     date_str = datetime.now().strftime('%d%m%y'); filename = f"{hostname}_{date_str}.csv"
     header = ['Catégorie', 'Sous-catégorie', 'Statut', 'Criticité', 'Description', 'Vulnérabilités']
     rows = []
+
+    # Cas spécial pour le certificat SSL pour l'inclure toujours dans le CSV
+    ssl_cert = results.get('ssl_certificate')
+    if ssl_cert:
+        jours = ssl_cert.get('jours_restants')
+        desc = f"Expire le {ssl_cert.get('date_expiration')}"
+        if jours is not None:
+            desc += f" (dans {jours} jours)" if jours >= 0 else f" (expiré depuis {-jours} jours)"
+        rows.append({
+            'Catégorie': 'Certificat SSL',
+            'Sous-catégorie': 'Détails du certificat',
+            'Statut': ssl_cert.get('statut'),
+            'Criticité': ssl_cert.get('criticite'),
+            'Description': desc,
+            'Vulnérabilités': ''
+        })
+
     def flatten_data(category, sub_category, data):
         if isinstance(data, list):
             for item in data: flatten_data(category, sub_category, item)
@@ -339,8 +357,9 @@ def generate_csv_report(results, hostname):
                 if not data['secure']['present']: flatten_data(category, f"{data['nom']} - secure", data['secure'])
                 if not data['httponly']['present']: flatten_data(category, f"{data['nom']} - httponly", data['httponly'])
                 if not data['samesite']['present']: flatten_data(category, f"{data['nom']} - samesite", data['samesite'])
+
     for key, res in results.items():
-        if key in ['hostname', 'score_final', 'note']: continue
+        if key in ['hostname', 'score_final', 'note', 'ssl_certificate']: continue
         flatten_data(key.replace('_', ' ').title(), key, res)
     try:
         with open(filename, 'w', newline='', encoding='utf-8') as f:
@@ -356,7 +375,24 @@ def generate_html_report(results, hostname):
     for category, data in results.items():
         if category in ['hostname', 'score_final', 'note']: continue
         html_content += f"<div class='report-card'><h2>{category.replace('_', ' ').title()}</h2>"
-        if isinstance(data, list):
+        # Cas spécial pour le certificat SSL, qui est un dictionnaire unique et non une liste.
+        if category == 'ssl_certificate':
+            crit = data.get('criticite', 'INFO')
+            html_content += f"<div class='finding finding-{crit}'>"
+            html_content += f"<strong>Statut</strong>: {data.get('message', 'N/A')}<br>"
+            if data.get('statut') == 'SUCCESS':
+                jours_restants = data.get('jours_restants')
+                expiration_text = data.get('date_expiration', 'N/A')
+                if jours_restants is not None:
+                    expiration_text += f" (dans {jours_restants} jours)"
+                html_content += f"<strong>Sujet</strong>: {data.get('sujet', 'N/A')}<br>"
+                html_content += f"<strong>Émetteur</strong>: {data.get('emetteur', 'N/A')}<br>"
+                html_content += f"<strong>Expire le</strong>: {expiration_text}"
+            remediation_id = data.get('remediation_id')
+            if remediation_id and remediation_id in REMEDIATION_ADVICE:
+                html_content += f"<p class='remediation'>Action: {REMEDIATION_ADVICE[remediation_id].get('default', '')}</p>"
+            html_content += "</div>"
+        elif isinstance(data, list):
             for item in data:
                 crit = item.get('criticite', 'INFO'); html_content += f"<div class='finding finding-{crit}'>"; html_content += f"<strong>{item.get('protocole') or item.get('nom') or item.get('bibliotheque', 'Élément')}</strong>: {item.get('message', '')}<br>"
                 if 'version_detectee' in item: html_content += f"Version détectée: {item['version_detectee']}, dernière version: {item['derniere_version']}<br>"
@@ -422,7 +458,12 @@ def print_human_readable_report(results):
             advice = REMEDIATION_ADVICE[remediation_id]; advice_text = advice.get(server_type, advice.get('default', ''))
             if advice_text: print(f"    -> Action : {advice_text}")
     print("\n--- Analyse du certificat SSL/TLS ---"); ssl_cert = results.get('ssl_certificate', {}); icon = STATUS_ICONS.get(ssl_cert.get('statut'), '❓'); print(f"  {icon} {crit_str(ssl_cert.get('criticite'))} {ssl_cert.get('message', 'Aucune donnée.')}")
-    if ssl_cert.get('statut') == "SUCCESS": print(f"    Sujet    : {ssl_cert.get('sujet')}\n    Émetteur : {ssl_cert.get('emetteur')}\n    Expire le: {ssl_cert.get('date_expiration')}"); print_remediation(ssl_cert)
+    if ssl_cert.get('statut') == "SUCCESS":
+        jours_restants = ssl_cert.get('jours_restants')
+        expiration_text = f"    Expire le: {ssl_cert.get('date_expiration')}"
+        if jours_restants is not None:
+            expiration_text += f" (dans {jours_restants} jours)"
+        print(f"    Sujet    : {ssl_cert.get('sujet')}\n    Émetteur : {ssl_cert.get('emetteur')}\n{expiration_text}"); print_remediation(ssl_cert)
     print("\n--- Scan des protocoles SSL/TLS supportés ---")
     for proto in results.get('tls_protocols', []): icon = STATUS_ICONS.get(proto.get('statut'), '❓'); print(f"  {icon} {crit_str(proto.get('criticite'))} {proto.get('protocole', '')} : {proto.get('message', '')}"); print_remediation(proto)
     print("\n--- Analyse de la redirection HTTP vers HTTPS ---"); redirect = results.get('http_redirect', {}); icon = STATUS_ICONS.get(redirect.get('statut'), '❓'); print(f"  {icon} {crit_str(redirect.get('criticite'))} {redirect.get('message', 'Aucune donnée.')}"); print_remediation(redirect)
