@@ -665,12 +665,8 @@ def generate_html_summary(all_scans):
         const getCellValue = (tr, idx) => {
             const cell = tr.children[idx];
             if (!cell) return '';
-
-            // Prioritize specific data attributes if they exist, for more reliable sorting
             const sortValue = cell.dataset.sortValue;
             if (sortValue) return sortValue;
-
-            // Fallback to text content
             return cell.innerText || cell.textContent;
         };
 
@@ -681,51 +677,48 @@ def generate_html_summary(all_scans):
             const v2 = getCellValue(b, idx);
             const direction = asc ? 1 : -1;
 
-            // Handle custom grade sorting
-            if (idx === 4) {
+            if (idx === 4) { // Grade column
                 return (gradeOrder[v1] - gradeOrder[v2]) * direction;
             }
 
-            // Handle numeric sorting (Score, Vulns, Quick Wins)
-            if ([3, 6, 7].includes(idx)) {
+            if ([3, 6, 7].includes(idx)) { // Numeric columns
                 const num1 = parseFloat(v1);
                 const num2 = parseFloat(v2);
                 const isNum1NaN = isNaN(num1);
                 const isNum2NaN = isNaN(num2);
 
                 if (isNum1NaN && isNum2NaN) return 0;
-                if (isNum1NaN) return 1; // N/A or non-numeric goes to the bottom
-                if (isNum2NaN) return -1; // N/A or non-numeric goes to the bottom
-
+                if (isNum1NaN) return 1;
+                if (isNum2NaN) return -1;
                 return (num1 - num2) * direction;
             }
 
-            // Default alphabetical sort
             return v1.localeCompare(v2) * direction;
         };
 
         document.querySelectorAll('th').forEach(th => {
-            // Check if the column is sortable
             if (th.style.cursor === 'default') return;
 
             th.addEventListener('click', () => {
                 const table = th.closest('table');
                 const tbody = table.querySelector('tbody');
                 const thIndex = Array.from(th.parentNode.children).indexOf(th);
-                const currentIsAsc = th.dataset.sortDir === 'asc';
 
-                // Apply the sort
+                // Determine the new sort direction
+                const newDirectionIsAsc = th.dataset.sortDir !== 'asc';
+
+                // Sort the rows
                 Array.from(tbody.querySelectorAll('tr'))
-                    .sort(comparer(thIndex, !currentIsAsc))
+                    .sort(comparer(thIndex, newDirectionIsAsc))
                     .forEach(tr => tbody.appendChild(tr));
 
-                // Update header styles and state
+                // Update headers state and indicators
                 table.querySelectorAll('th').forEach(otherTh => {
                     otherTh.querySelector('.sort-indicator').textContent = '';
                     delete otherTh.dataset.sortDir;
                 });
-                th.querySelector('.sort-indicator').textContent = !currentIsAsc ? ' ▼' : ' ▲';
-                th.dataset.sortDir = !currentIsAsc ? 'desc' : 'asc';
+                th.querySelector('.sort-indicator').textContent = newDirectionIsAsc ? ' ▲' : ' ▼';
+                th.dataset.sortDir = newDirectionIsAsc ? 'asc' : 'desc';
             });
         });
     });
