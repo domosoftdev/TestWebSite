@@ -321,6 +321,85 @@ def check_wordpress_specifics(hostname):
     except requests.exceptions.RequestException: results['plugin_enum'] = {"statut": "INFO", "criticite": "INFO", "message": "Erreur réseau lors de l'énumération des plugins."}
     return results
 
+# Constantes pour la détection de domaine parqué
+PARKING_KEYWORDS = [
+    "domain parked", "domain for sale", "buy this domain", "under construction",
+    "domaine à vendre", "domaine en vente", "domaine parké", "en construction"
+]
+PARKING_NS_KEYWORDS = ["park", "sedo", "bodis", "afternic", "domain.com", "godaddy", "namecheap"]
+PARKING_URL_KEYWORDS = ["sedo.com", "dan.com", "bodis.com", "afternic.com"]
+
+
+def check_domain_parking(hostname, dns_results, whois_info):
+    """
+    Tente de déterminer si un domaine est "parké" en utilisant une heuristique et un système de score.
+    """
+    parking_score = 0
+    reasons = []
+
+    # 1. Analyse des serveurs de noms (NS)
+    ns_servers = dns_results.get('ns', {}).get('valeurs', [])
+    if ns_servers and any(park_kw in ns.lower() for ns in ns_servers for park_kw in PARKING_NS_KEYWORDS):
+        parking_score += 3
+        reasons.append("Les serveurs de noms semblent appartenir à un service de parking.")
+
+    # 2. Analyse des serveurs mail (MX)
+    mx_records = dns_results.get('mx', {}).get('valeurs', [])
+    if not mx_records:
+        parking_score += 2
+        reasons.append("Aucun enregistrement MX trouvé, le domaine n'est probablement pas utilisé pour les e-mails.")
+
+    # 3. Analyse du contenu de la page
+    try:
+        response = requests.get(f"http://{hostname}", timeout=10, allow_redirects=True)
+        final_url = response.url.lower()
+
+        # 3a. Vérification de l'URL finale
+        if any(url_kw in final_url for url_kw in PARKING_URL_KEYWORDS):
+            parking_score += 5
+            reasons.append(f"L'URL finale ({response.url}) est un service de parking connu.")
+
+        # 3b. Analyse du contenu HTML
+        soup = BeautifulSoup(response.content, 'lxml')
+        page_text = (soup.title.string if soup.title else "") + " " + soup.get_text()
+        page_text = page_text.lower()
+
+        if any(kw in page_text for kw in PARKING_KEYWORDS):
+            parking_score += 5
+            reasons.append("Le contenu de la page contient des mots-clés typiques des domaines parkés.")
+
+        # 3c. Contenu minimal
+        if len(soup.get_text()) < 200: # Seuil arbitraire pour contenu très court
+            parking_score += 1
+            reasons.append("Le contenu textuel de la page est très court.")
+
+    except requests.exceptions.RequestException:
+        # Si le site n'est pas joignable, cela peut aussi être un signe, mais on ne peut pas être sûr.
+        parking_score += 1
+        reasons.append("Impossible de se connecter au domaine via HTTP.")
+
+    # 4. Analyse WHOIS
+    if whois_info.get('statut') == 'SUCCESS':
+        creation_date_str = whois_info.get('creation_date', '').split(',')[0]
+        if creation_date_str != 'N/A':
+            try:
+                creation_date = datetime.fromisoformat(creation_date_str)
+                if (datetime.now() - creation_date).days < 90: # Moins de 3 mois
+                    parking_score += 1
+                    reasons.append("Le domaine a été enregistré récemment.")
+            except ValueError:
+                pass
+
+    is_parked = parking_score >= 5
+    result = {
+        "is_parked": is_parked,
+        "score": parking_score,
+        "reasons": reasons,
+        "criticite": "INFO" if not is_parked else "WARNING"
+    }
+    return result
+
+
 def _format_whois_value(value):
     """Helper pour formater les valeurs WHOIS qui peuvent être des listes ou des datetimes."""
     if isinstance(value, list):
@@ -420,6 +499,17 @@ def generate_csv_report(results, hostname):
                 'Vulnérabilités': ''
             })
 
+    parking_info = results.get('domain_parking', {})
+    if parking_info.get('is_parked'):
+        rows.append({
+            'Catégorie': 'Domaine Parké',
+            'Sous-catégorie': 'Détection',
+            'Statut': 'WARNING',
+            'Criticité': parking_info.get('criticite', 'INFO'),
+            'Description': f"Le domaine est probablement parké (Score: {parking_info.get('score', 0)}). Raisons: {'; '.join(parking_info.get('reasons', []))}",
+            'Vulnérabilités': ''
+        })
+
     def flatten_data(category, sub_category, data):
         if isinstance(data, list):
             for item in data: flatten_data(category, sub_category, item)
@@ -512,6 +602,17 @@ def generate_html_report(results, hostname):
                  if remediation_id and remediation_id in REMEDIATION_ADVICE: html_content += f"<p class='remediation'>Action: {REMEDIATION_ADVICE[remediation_id].get('default', '')}</p>"
                  html_content += "</div>"
         html_content += "</div>"
+
+    parking_info = results.get('domain_parking', {})
+    if parking_info.get('is_parked'):
+        html_content += "<div class='report-card'><h2>Détection de Domaine Parké</h2>"
+        html_content += f"<div class='finding finding-WARNING'>"
+        html_content += f"<strong>Statut:</strong> Ce domaine est probablement parké (Score: {parking_info.get('score', 0)})<br>"
+        html_content += "<strong>Indices:</strong><ul>"
+        for reason in parking_info.get('reasons', []):
+            html_content += f"<li>{reason}</li>"
+        html_content += "</ul></div></div>"
+
     html_content += "</body></html>"
     try:
         with open(filename, 'w', encoding='utf-8') as f: f.write(html_content)
@@ -631,6 +732,16 @@ def print_human_readable_report(results):
             print(f"    Statut du domaine    : {whois_info.get('domain_status', 'N/A')}")
             print(f"    Serveurs DNS         : {whois_info.get('name_servers', 'N/A')}")
             print(f"    DNSSEC               : {whois_info.get('dnssec', 'N/A')}")
+
+    parking_info = results.get('domain_parking', {})
+    if parking_info.get('is_parked'):
+        print("\n--- Détection de Domaine Parké ---")
+        icon = STATUS_ICONS.get('WARNING', '❓')
+        print(f"  {icon} [WARNING] Ce domaine semble être parké (score: {parking_info.get('score', 0)}).")
+        print("    Indices détectés :")
+        for reason in parking_info.get('reasons', []):
+            print(f"      - {reason}")
+
     print("\n" + "="*50); print(" LÉGENDE DE LA NOTE :"); print("  A+ : Excellent (0 points)"); print("  A  : Bon (1-10 points)"); print("  B  : Moyen (11-20 points)"); print("  C  : Médiocre (21-40 points)"); print("  D  : Mauvais (41-60 points)"); print("  F  : Critique (>60 points)"); print("="*50)
 
 def generate_json_report(results, hostname):
@@ -661,6 +772,7 @@ def main():
     all_results['dns_records'] = check_dns_records(hostname)
     all_results['js_libraries'] = check_js_libraries(hostname)
     all_results['whois_info'] = check_whois_info(hostname)
+    all_results['domain_parking'] = check_domain_parking(hostname, all_results.get('dns_records', {}), all_results.get('whois_info', {}))
     score, grade = calculate_score(all_results); all_results['score_final'] = score; all_results['note'] = grade
     print_human_readable_report(all_results)
     formats = [f.strip() for f in args.formats.lower().split(',') if f.strip()]
