@@ -31,6 +31,9 @@ Le script effectue actuellement les vérifications suivantes :
 6.  **Analyse des attributs de cookies (HttpOnly, Secure, SameSite)**
     *   Des cookies mal configurés peuvent être volés, ce qui expose les sessions des utilisateurs. S'assurer qu'ils sont marqués `HttpOnly` (pour empêcher l'accès via JavaScript), `Secure` (pour forcer le chiffrement) et `SameSite` (pour prévenir les attaques CSRF) protège contre de nombreuses menaces.
 
+7.  **Récupération des informations WHOIS**
+    *   Le script tente de récupérer les informations publiques d'enregistrement du domaine (WHOIS), telles que le registrar, les dates de création et d'expiration, et le statut du domaine. Ces informations peuvent être utiles pour le suivi administratif (note : la disponibilité de ces données dépend du registrar et des politiques de confidentialité).
+
 ## Installation
 
 1.  Assurez-vous d'avoir Python 3 installé sur votre système.
@@ -168,16 +171,36 @@ Liste les vulnérabilités faciles à corriger (comme les en-têtes de sécurit�
 ```bash
 # Pour un domaine spécifique
 python3 consolidator.py --quick-wins google.com
-
-# Pour tous les domaines
-python3 consolidator.py --quick-wins
 ```
-*Exemple de sortie :*
-```
-🚀 Quick Wins (vulnérabilités faciles à corriger) :
 
---- google.com (Scan du 2025-08-18) ---
-  - security_headers.en-tetes_securite.csp.CSP_MISSING
-  - security_headers.en-tetes_securite.hsts.HSTS_MISSING
-  - security_headers.en-tetes_securite.x-content-type-options.XCTO_MISSING
+#### 6. Générer un rapport de synthèse HTML (`--summary-html`)
+Crée un fichier `summary_report.html` qui affiche un tableau de bord de l'état de sécurité de toutes les cibles. Ce rapport inclut des indicateurs de tendance, des métriques clés et des colonnes triables.
+```bash
+python3 consolidator.py --summary-html
+```
+
+#### 7. Lister les certificats qui expirent (`--list-expiring-certs`)
+Affiche la liste des certificats SSL/TLS qui expireront dans un nombre de jours donné (30 par défaut).
+```bash
+# Vérifie les certificats expirant dans les 30 prochains jours
+python3 consolidator.py --list-expiring-certs
+
+# Vérifie les certificats expirant dans les 90 prochains jours
+python3 consolidator.py --list-expiring-certs 90
+```
+
+#### 8. Générer un graphique d'évolution (`--graph`)
+Crée une image (`<domaine>_evolution.png`) montrant l'évolution du score de sécurité pour un domaine spécifique dans le temps.
+```bash
+python3 consolidator.py --graph google.com
+```
+
+#### 9. Rapport d'actions par vulnérabilité (`--report`)
+Liste tous les domaines affectés par un ou plusieurs types de vulnérabilités, pour faciliter les campagnes de remédiation.
+```bash
+# Lister tous les sites sans HSTS
+python3 consolidator.py --report hsts
+
+# Lister tous les sites avec des problèmes de DMARC ou de SPF
+python3 consolidator.py --report dmarc spf
 ```
