@@ -321,6 +321,15 @@ def check_wordpress_specifics(hostname):
     except requests.exceptions.RequestException: results['plugin_enum'] = {"statut": "INFO", "criticite": "INFO", "message": "Erreur réseau lors de l'énumération des plugins."}
     return results
 
+def _format_whois_value(value):
+    """Helper pour formater les valeurs WHOIS qui peuvent être des listes ou des datetimes."""
+    if isinstance(value, list):
+        # Convertir les datetimes dans la liste en chaînes
+        return ", ".join([v.isoformat() if isinstance(v, datetime) else str(v) for v in value])
+    if isinstance(value, datetime):
+        return value.isoformat()
+    return str(value) if value is not None else "N/A"
+
 def check_whois_info(hostname):
     """
     Récupère les informations WHOIS pour un nom de domaine donné.
@@ -328,37 +337,36 @@ def check_whois_info(hostname):
     try:
         w = whois.whois(hostname)
 
-        # Normaliser les dates en chaînes de caractères
-        creation_date = w.creation_date
-        if isinstance(creation_date, list):
-            creation_date = creation_date[0] if creation_date else None
-        if hasattr(creation_date, 'isoformat'):
-            creation_date = creation_date.isoformat()
+        # Vérifier si le WHOIS a retourné des données ou un message d'erreur
+        if not hasattr(w, 'domain_name') or w.domain_name is None:
+            # Souvent un signe que le TLD n'est pas supporté ou que le domaine n'existe pas
+            return {
+                "statut": "ERROR",
+                "message": "Aucune donnée WHOIS trouvée. Le domaine est peut-être invalide ou le TLD non supporté.",
+                "criticite": "LOW"
+            }
 
-        expiration_date = w.expiration_date
-        if isinstance(expiration_date, list):
-            expiration_date = expiration_date[0] if expiration_date else None
-        if hasattr(expiration_date, 'isoformat'):
-            expiration_date = expiration_date.isoformat()
-
-        # Normaliser les statuts et serveurs de noms
-        domain_status = w.status
-        if isinstance(domain_status, list):
-            domain_status = ", ".join(domain_status)
-
-        name_servers = w.name_servers
-        if isinstance(name_servers, list):
-            name_servers = ", ".join(name_servers)
+        registrant_address = [
+            _format_whois_value(w.get('address')),
+            _format_whois_value(w.get('city')),
+            _format_whois_value(w.get('state')),
+            _format_whois_value(w.get('zipcode')),
+            _format_whois_value(w.get('country'))
+        ]
 
         return {
             "statut": "SUCCESS",
-            "registrar": w.registrar,
-            "creation_date": str(creation_date) if creation_date else "N/A",
-            "expiration_date": str(expiration_date) if expiration_date else "N/A",
-            "domain_status": domain_status if domain_status else "N/A",
-            "name_servers": name_servers if name_servers else "N/A",
-            "dnssec": "Activé" if w.dnssec else "Désactivé ou non trouvé",
-            "criticite": "INFO"
+            "criticite": "INFO",
+            "registrar": _format_whois_value(w.get('registrar')),
+            "creation_date": _format_whois_value(w.get('creation_date')),
+            "expiration_date": _format_whois_value(w.get('expiration_date')),
+            "updated_date": _format_whois_value(w.get('updated_date')),
+            "domain_status": _format_whois_value(w.get('status')),
+            "name_servers": _format_whois_value(w.get('name_servers')),
+            "dnssec": "Activé" if w.get('dnssec') else "Désactivé ou non trouvé",
+            "registrant_name": _format_whois_value(w.get('name')),
+            "registrant_org": _format_whois_value(w.get('org')),
+            "registrant_address": ", ".join(filter(lambda x: x and x != "N/A", registrant_address)) or "N/A",
         }
     except Exception as e:
         return {
@@ -469,9 +477,12 @@ def generate_html_report(results, hostname):
             if data.get('statut') == 'SUCCESS':
                 html_content += "<strong>Informations WHOIS récupérées</strong><br>"
                 html_content += f"<strong>Registrar:</strong> {data.get('registrar', 'N/A')}<br>"
+                html_content += f"<strong>Propriétaire:</strong> {data.get('registrant_name', 'N/A')} ({data.get('registrant_org', 'N/A')})<br>"
+                html_content += f"<strong>Adresse:</strong> {data.get('registrant_address', 'N/A')}<br>"
                 html_content += f"<strong>Date de création:</strong> {data.get('creation_date', 'N/A')}<br>"
                 html_content += f"<strong>Date d'expiration:</strong> {data.get('expiration_date', 'N/A')}<br>"
-                html_content += f"<strong>Statut du domaine:</strong> {data.get('domain_status', 'N/A')}<br>"
+                html_content += f"<strong>Dernière mise à jour:</strong> {data.get('updated_date', 'N/A')}<br>"
+                html_content += f"<strong>Statut:</strong> {data.get('domain_status', 'N/A')}<br>"
                 html_content += f"<strong>Serveurs DNS:</strong> {data.get('name_servers', 'N/A')}<br>"
                 html_content += f"<strong>DNSSEC:</strong> {data.get('dnssec', 'N/A')}"
             else:
@@ -610,12 +621,16 @@ def print_human_readable_report(results):
         message = whois_info.get('message', 'Données WHOIS récupérées.')
         print(f"  {icon} {crit_str(whois_info.get('criticite'))} {message}")
         if whois_info.get('statut') == 'SUCCESS':
-            print(f"    Registrar          : {whois_info.get('registrar', 'N/A')}")
-            print(f"    Date de création   : {whois_info.get('creation_date', 'N/A')}")
-            print(f"    Date d'expiration  : {whois_info.get('expiration_date', 'N/A')}")
-            print(f"    Statut du domaine  : {whois_info.get('domain_status', 'N/A')}")
-            print(f"    Serveurs DNS       : {whois_info.get('name_servers', 'N/A')}")
-            print(f"    DNSSEC             : {whois_info.get('dnssec', 'N/A')}")
+            print(f"    Registrar            : {whois_info.get('registrar', 'N/A')}")
+            print(f"    Nom du propriétaire  : {whois_info.get('registrant_name', 'N/A')}")
+            print(f"    Organisation         : {whois_info.get('registrant_org', 'N/A')}")
+            print(f"    Adresse              : {whois_info.get('registrant_address', 'N/A')}")
+            print(f"    Date de création     : {whois_info.get('creation_date', 'N/A')}")
+            print(f"    Date d'expiration    : {whois_info.get('expiration_date', 'N/A')}")
+            print(f"    Dernière mise à jour : {whois_info.get('updated_date', 'N/A')}")
+            print(f"    Statut du domaine    : {whois_info.get('domain_status', 'N/A')}")
+            print(f"    Serveurs DNS         : {whois_info.get('name_servers', 'N/A')}")
+            print(f"    DNSSEC               : {whois_info.get('dnssec', 'N/A')}")
     print("\n" + "="*50); print(" LÉGENDE DE LA NOTE :"); print("  A+ : Excellent (0 points)"); print("  A  : Bon (1-10 points)"); print("  B  : Moyen (11-20 points)"); print("  C  : Médiocre (21-40 points)"); print("  D  : Mauvais (41-60 points)"); print("  F  : Critique (>60 points)"); print("="*50)
 
 def generate_json_report(results, hostname):
