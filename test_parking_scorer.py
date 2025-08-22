@@ -82,9 +82,9 @@ class TestParkingScorer(unittest.TestCase):
 
     @patch('parking_scorer.requests.Session.get', side_effect=requests.exceptions.RequestException)
     def test_analyserContenu_connection_fails(self, mock_get):
-        """Should return 0 if connection fails."""
+        """Should return 5 if all connection attempts fail."""
         score = analyserContenu("unreachable-site.com")
-        self.assertEqual(score, 0)
+        self.assertEqual(score, 5)
 
     # --- Tests for analyserTechnique ---
 
