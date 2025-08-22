@@ -29,6 +29,9 @@ from bs4 import BeautifulSoup
 import re
 from packaging import version
 import whois
+from parking_scorer import calculerScoreParking
+from datetime import timedelta
+import uuid
 
 SEVERITY_SCORES = {
     "CRITICAL": 10,
@@ -320,206 +323,6 @@ def check_wordpress_specifics(hostname):
         else: results['plugin_enum'] = {"statut": "INFO", "criticite": "INFO", "message": "Aucun plugin détecté depuis la page d'accueil."}
     except requests.exceptions.RequestException: results['plugin_enum'] = {"statut": "INFO", "criticite": "INFO", "message": "Erreur réseau lors de l'énumération des plugins."}
     return results
-
-from urllib.parse import urlparse
-import uuid
-from datetime import timedelta
-
-# --- Début de la section Score de Parking ---
-
-# Listes de mots-clés (en minuscules pour faciliter la comparaison)
-KEYWORDS_FOR_SALE = [
-    "domain for sale", "domaine à vendre", "buy this domain", "acheter ce domaine",
-    "make an offer", "faire une offre", "this domain is available",
-    "premium domain", "inquire about this domain"
-]
-
-KEYWORDS_PARKING_GENERIC = [
-    "domain parking", "parked domain", "sedo", "bodis", "dan.com", "afternic",
-    "domain name", "related searches", "sponsored listings", "ads by",
-    "coming soon", "en construction"
-]
-
-# Listes de services de parking connus
-KNOWN_PARKING_HOSTNAMES = [
-    "sedo.com", "bodis.com", "dan.com", "afternic.com", "hugedomains.com",
-    "uniregistry.com", "above.com", "parkingcrew.net", "domainsponsor.com"
-]
-
-KNOWN_PARKING_NAMESERVERS = [
-    "sedoparking.com", "bodis.com", "parkingcrew.net", "above.com",
-    "uniregistrymarket.link", "huge-domains.com", "afternic.com", "dan.com"
-]
-
-# (Optionnel, plus difficile à maintenir) Plages d'IP de parking connues
-KNOWN_PARKING_IP_RANGES = [
-    # Exemple : "64.190.62.110", "194.58.113.0/24"
-]
-
-def analyserContenu(domaine: str) -> int:
-    """
-    Analyse le contenu HTTP d'un domaine pour détecter des signes de parking.
-    Score: 0 à 40 points.
-    """
-    urls_a_tester = [f"https://www.{domaine}", f"https://{domaine}", f"http://{domaine}"]
-    page_html = ""
-    url_finale = ""
-
-    session = requests.Session()
-    session.max_redirects = 5
-    headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-    }
-
-    for url in urls_a_tester:
-        try:
-            reponse = session.get(url, timeout=10, headers=headers)
-            if reponse.status_code == 200:
-                page_html = reponse.text
-                url_finale = reponse.url
-                break
-        except requests.exceptions.RequestException:
-            continue
-
-    if not page_html:
-        return 0
-
-    # 2. Vérification de redirection vers un service connu (20 points)
-    hostname_final = urlparse(url_finale).hostname
-    if hostname_final:
-        for parking_host in KNOWN_PARKING_HOSTNAMES:
-            if hostname_final.endswith(parking_host):
-                return 20
-
-    # 3. Analyse des mots-clés (20 points)
-    score_keywords = 0
-    soup = BeautifulSoup(page_html, 'html.parser')
-
-    texte_page_minuscules = soup.get_text().lower()
-    titre_minuscules = soup.title.string.lower() if soup.title and soup.title.string else ""
-
-    # Recherche de mots-clés de vente explicites (10 points)
-    for keyword in KEYWORDS_FOR_SALE:
-        if keyword in texte_page_minuscules or keyword in titre_minuscules:
-            score_keywords += 10
-            break
-
-    # Recherche de mots-clés de parking génériques (10 points)
-    for keyword in KEYWORDS_PARKING_GENERIC:
-        if keyword in texte_page_minuscules or keyword in titre_minuscules:
-            score_keywords += 10
-            break
-
-    return score_keywords
-
-def analyserTechnique(domaine: str) -> int:
-    """
-    Analyse les enregistrements DNS d'un domaine pour des signes techniques de parking.
-    Score: 0 à 30 points.
-    """
-    score_technique = 0
-    resolver = dns.resolver.Resolver()
-    resolver.timeout = 5
-    resolver.lifetime = 5
-
-    # 1. Vérification des serveurs de noms (NS) (15 points)
-    try:
-        ns_records = resolver.resolve(domaine, 'NS')
-        for ns_record in ns_records:
-            ns_str = str(ns_record.target).lower()
-            for known_ns in KNOWN_PARKING_NAMESERVERS:
-                if ns_str.endswith(known_ns + '.'):
-                    score_technique += 15
-                    return score_technique # Signal très fort
-    except (dns.resolver.NoAnswer, dns.resolver.NXDOMAIN, dns.resolver.Timeout):
-        pass
-
-    # 2. Vérification de l'adresse IP (A Record) (10 points)
-    if KNOWN_PARKING_IP_RANGES:
-        try:
-            a_records = resolver.resolve(domaine, 'A')
-            # La logique de comparaison d'IP/plage d'IP irait ici.
-        except (dns.resolver.NoAnswer, dns.resolver.NXDOMAIN, dns.resolver.Timeout):
-            pass
-
-    # 3. Vérification du Wildcard DNS (5 points)
-    try:
-        ip_racine_answers = resolver.resolve(domaine, 'A')
-        ip_racine = {str(r) for r in ip_racine_answers}
-
-        sous_domaine_aleatoire = f"test-wildcard-{uuid.uuid4().hex[:8]}.{domaine}"
-        ip_aleatoire_answers = resolver.resolve(sous_domaine_aleatoire, 'A')
-        ip_aleatoire = {str(r) for r in ip_aleatoire_answers}
-
-        if ip_racine and ip_aleatoire == ip_racine:
-            score_technique += 5
-
-    except (dns.resolver.NoAnswer, dns.resolver.NXDOMAIN, dns.resolver.Timeout):
-        pass
-    except Exception:
-        pass
-
-    return score_technique
-
-def analyserContextuel(domaine: str) -> int:
-    """
-    Analyse les données WHOIS d'un domaine pour des indices contextuels de parking.
-    Score: 0 à 30 points.
-    """
-    score_contextuel = 0
-    try:
-        donnees_whois = whois.whois(domaine)
-    except Exception:
-        return 0
-
-    if not donnees_whois or not donnees_whois.get('creation_date'):
-        return 0
-
-    # 1. Registrar et confidentialité (5 points)
-    privacy_keywords = ["privacy", "whoisguard", "redacted", "protection"]
-    registrant_info_str = str(donnees_whois.get('registrant_name', '')) + str(donnees_whois.get('org', ''))
-    if any(keyword in registrant_info_str.lower() for keyword in privacy_keywords):
-        score_contextuel += 5
-
-    # 2. Historique récent (10 points)
-    now = datetime.now()
-
-    updated_date = donnees_whois.get('updated_date')
-    if isinstance(updated_date, list): updated_date = updated_date[0]
-    if updated_date and (now - updated_date) < timedelta(days=30):
-        score_contextuel += 10
-    else:
-        creation_date = donnees_whois.get('creation_date')
-        if isinstance(creation_date, list): creation_date = creation_date[0]
-        if creation_date and (now - creation_date) < timedelta(days=90):
-            score_contextuel += 5
-
-    # 3. Statut du domaine (10 points)
-    domain_status = donnees_whois.get('status', [])
-    if isinstance(domain_status, str):
-        domain_status = [domain_status]
-
-    for statut in domain_status:
-        if "clienthold" in statut.lower():
-            score_contextuel += 10
-            break
-
-    return score_contextuel
-
-def calculerScoreParking(domaine: str) -> int:
-    """
-    Orchestre les différentes analyses et calcule le score de parking final.
-    """
-    score_contenu = analyserContenu(domaine)
-    score_technique = analyserTechnique(domaine)
-    score_contextuel = analyserContextuel(domaine)
-
-    score_total = score_contenu + score_technique + score_contextuel
-
-    return min(score_total, 100)
-
-# --- Fin de la section Score de Parking ---
-
 
 def _format_whois_value(value):
     """Helper pour formater les valeurs WHOIS qui peuvent être des listes ou des datetimes."""
@@ -915,8 +718,6 @@ def main():
     all_results['js_libraries'] = check_js_libraries(hostname)
     all_results['whois_info'] = check_whois_info(hostname)
     all_results['parking_score'] = calculerScoreParking(hostname)
-    # The old domain_parking check is removed, so we don't calculate score based on it anymore.
-    # We will keep the security score calculation as is, parking score is informational.
     score, grade = calculate_score(all_results)
     all_results['score_final'] = score
     all_results['note'] = grade
