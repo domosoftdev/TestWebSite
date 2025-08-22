@@ -86,6 +86,30 @@ class TestParkingScorer(unittest.TestCase):
         score = analyserContenu("unreachable-site.com")
         self.assertEqual(score, 5)
 
+    @patch('parking_scorer.requests.Session.get')
+    def test_analyserContenu_css_class_check(self, mock_get):
+        """Should return 10 for finding a parking-related CSS class."""
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.url = "https://css-parked.com"
+        mock_response.text = '<html><body><div class="for-sale-banner">Domain for Sale</div></body></html>'
+        mock_get.return_value = mock_response
+
+        score = analyserContenu("css-parked.com")
+        self.assertEqual(score, 10)
+
+    @patch('parking_scorer.requests.Session.get')
+    def test_analyserContenu_script_source_check(self, mock_get):
+        """Should return 15 for finding a parking service in a script src."""
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.url = "https://script-parked.com"
+        mock_response.text = f'<html><body><script src="//{KNOWN_PARKING_HOSTNAMES[0]}/tracker.js"></script></body></html>'
+        mock_get.return_value = mock_response
+
+        score = analyserContenu("script-parked.com")
+        self.assertEqual(score, 15)
+
     # --- Tests for analyserTechnique ---
 
     @patch('parking_scorer.dns.resolver.Resolver.resolve')
