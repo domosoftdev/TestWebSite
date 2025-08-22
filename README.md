@@ -73,6 +73,29 @@ Analyse de l'hôte : google.com
 
 ---
 
+## Outil de Score de Parking (`parking_scorer.py`)
+
+Ce projet inclut également un outil dédié au calcul du "score de parking" d'un nom de domaine. Ce score, sur une échelle de 0 à 100, évalue la probabilité qu'un domaine soit "parké" (c'est-à-dire enregistré mais non utilisé pour un site web actif, affichant souvent des publicités ou une page "à vendre").
+
+Ce score est automatiquement calculé et inclus dans le rapport principal de `security_checker.py`, mais le script `parking_scorer.py` peut aussi être utilisé de manière indépendante pour une analyse rapide et ciblée.
+
+### Utilisation autonome
+
+Pour obtenir uniquement le score de parking d'un domaine :
+
+```bash
+python3 parking_scorer.py exemple.com
+```
+
+### Exemple de sortie
+
+```
+Calcul du score de parking pour exemple.com...
+Score de parking pour exemple.com: 85/100
+```
+
+---
+
 ## Outil de Consolidation (`consolidator.py`)
 
 En plus du scanner principal, ce projet inclut `consolidator.py`, un outil puissant pour analyser les résultats de multiples scans sur la durée. Il vous permet de suivre l'évolution de la posture de sécurité de vos sites web.
