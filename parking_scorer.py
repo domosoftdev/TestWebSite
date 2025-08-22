@@ -38,7 +38,7 @@ KNOWN_PARKING_HOSTNAMES = [
 ]
 
 KNOWN_PARKING_NAMESERVERS = [
-    "sedoparking.com", "bodis.com", "parkingcrew.net", "above.com",
+    "sedoparking.com", "bodis.com", "parkingcrew.net", "above.com", "abovedomains.com",
     "uniregistrymarket.link", "huge-domains.com", "afternic.com", "dan.com"
 ]
 
@@ -83,16 +83,25 @@ def analyserContenu(domaine: str) -> int:
 
     score_keywords = 0
     soup = BeautifulSoup(page_html, 'html.parser')
-    texte_page_minuscules = soup.get_text().lower()
-    titre_minuscules = soup.title.string.lower() if soup.title and soup.title.string else ""
 
+    # Utiliser stripped_strings pour une extraction de texte plus propre et fiable
+    lines = (line.strip() for line in soup.stripped_strings)
+    all_text = " ".join(line.lower() for line in lines if line)
+
+    # Ajouter également le contenu des balises meta, qui n'est pas inclus dans stripped_strings
+    for meta in soup.find_all('meta', attrs={'name': ['description', 'keywords']}):
+        if meta.get('content'):
+            all_text += " " + meta.get('content').lower()
+
+    # Recherche de mots-clés de vente explicites (10 points)
     for keyword in KEYWORDS_FOR_SALE:
-        if keyword in texte_page_minuscules or keyword in titre_minuscules:
+        if keyword in all_text:
             score_keywords += 10
             break
 
+    # Recherche de mots-clés de parking génériques (10 points)
     for keyword in KEYWORDS_PARKING_GENERIC:
-        if keyword in texte_page_minuscules or keyword in titre_minuscules:
+        if keyword in all_text:
             score_keywords += 10
             break
 
@@ -114,8 +123,8 @@ def analyserTechnique(domaine: str) -> int:
             ns_str = str(ns_record.target).lower()
             for known_ns in KNOWN_PARKING_NAMESERVERS:
                 if ns_str.endswith(known_ns + '.'):
-                    score_technique += 15
-                    return score_technique
+                    # C'est un signal très fort, on retourne immédiatement.
+                    return 15
     except (dns.resolver.NoAnswer, dns.resolver.NXDOMAIN, dns.resolver.Timeout):
         pass
 
@@ -198,7 +207,6 @@ def main():
     parser.add_argument("domaine", help="Le nom de domaine à analyser (ex: exemple.com).")
     args = parser.parse_args()
 
-    # Simple check to see if domain might be valid
     if '.' not in args.domaine:
         print(f"Erreur : '{args.domaine}' ne semble pas être un nom de domaine valide.", file=sys.stderr)
         sys.exit(1)
