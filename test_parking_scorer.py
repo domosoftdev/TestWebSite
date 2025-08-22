@@ -176,18 +176,38 @@ class TestParkingScorer(unittest.TestCase):
     @patch('parking_scorer.analyserContenu')
     @patch('parking_scorer.analyserTechnique')
     @patch('parking_scorer.analyserContextuel')
-    def test_calculerScoreParking_sums_and_caps_scores(self, mock_contextuel, mock_technique, mock_contenu):
-        """Should sum the scores from all analyzers and cap at 100."""
-        mock_contenu.return_value = 20
-        mock_technique.return_value = 15
-        mock_contextuel.return_value = 10
-        score = calculerScoreParking("some-domain.com")
-        self.assertEqual(score, 45)
+    def test_calculerScoreParking_logic(self, mock_contextuel, mock_technique, mock_contenu):
+        """Should correctly sum scores or exit early based on strong signals."""
 
-        mock_contenu.return_value = 40
-        mock_technique.return_value = 30
-        mock_contextuel.return_value = 35
-        score = calculerScoreParking("max-score-domain.com")
+        # Scenario 1: Strong content signal (>=20), should exit early.
+        mock_contenu.return_value = 20
+        score = calculerScoreParking("strong-content.com")
+        self.assertEqual(score, 20)
+        mock_technique.assert_not_called()
+
+        # Scenario 2: Strong technical signal (>=15), should exit early.
+        mock_contenu.return_value = 10
+        mock_technique.return_value = 15
+        score = calculerScoreParking("strong-tech.com")
+        self.assertEqual(score, 15)
+        mock_contextuel.assert_not_called()
+
+        # Reset mocks for next scenario
+        mock_technique.reset_mock()
+        mock_contextuel.reset_mock()
+
+        # Scenario 3: No strong signals, should sum all scores.
+        mock_contenu.return_value = 10
+        mock_technique.return_value = 5
+        mock_contextuel.return_value = 10
+        score = calculerScoreParking("weak-signals.com")
+        self.assertEqual(score, 25)
+
+        # Scenario 4: Sum exceeds 100, should be capped.
+        mock_contenu.return_value = 10
+        mock_technique.return_value = 10
+        mock_contextuel.return_value = 90
+        score = calculerScoreParking("max-score.com")
         self.assertEqual(score, 100)
 
 if __name__ == '__main__':
