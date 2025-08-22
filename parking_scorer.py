@@ -38,7 +38,7 @@ KNOWN_PARKING_HOSTNAMES = [
 ]
 
 KNOWN_PARKING_NAMESERVERS = [
-    "sedoparking.com", "bodis.com", "parkingcrew.net", "above.com",
+    "sedoparking.com", "bodis.com", "parkingcrew.net", "above.com", "abovedomains.com",
     "uniregistrymarket.link", "huge-domains.com", "afternic.com", "dan.com"
 ]
 
@@ -123,8 +123,8 @@ def analyserTechnique(domaine: str) -> int:
             ns_str = str(ns_record.target).lower()
             for known_ns in KNOWN_PARKING_NAMESERVERS:
                 if ns_str.endswith(known_ns + '.'):
-                    score_technique += 15
-                    return score_technique
+                    # C'est un signal très fort, on retourne immédiatement.
+                    return 15
     except (dns.resolver.NoAnswer, dns.resolver.NXDOMAIN, dns.resolver.Timeout):
         pass
 
