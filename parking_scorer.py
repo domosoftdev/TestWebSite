@@ -63,8 +63,8 @@ def analyserContenu(domaine: str, verbose: bool = False) -> int:
             continue
 
     if not page_html:
-        if verbose: print("  [!] Impossible de récupérer le contenu de la page.")
-        return 0
+        if verbose: print("  [!] Impossible de récupérer le contenu de la page. : +5 pts")
+        return 5
 
     hostname_final = urlparse(url_finale).hostname
     if hostname_final:
