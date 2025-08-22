@@ -72,7 +72,7 @@ def analyserContenu(domaine: str, verbose: bool = False) -> int:
             if (hostname_final and hostname_final.endswith(parking_host)) or (parking_host in page_html):
                 if verbose: print(f"  [+] Le contenu ou l'URL finale correspond à un service de parking connu ({parking_host}) : +20 pts")
                 score += 20
-                break # On donne les points une seule fois
+                break
 
     soup = BeautifulSoup(page_html, 'html.parser')
     lines = (line.strip() for line in soup.stripped_strings)
@@ -192,6 +192,7 @@ def analyserContextuel(domaine: str, verbose: bool = False) -> int:
 
 def calculerScoreParking(domaine: str, verbose: bool = False) -> int:
     """Orchestre les analyses et calcule le score final."""
+    if verbose: print(f"Lancement de l'analyse complète pour {domaine}...")
     score_contenu = analyserContenu(domaine, verbose=verbose)
     score_technique = analyserTechnique(domaine, verbose=verbose)
     score_contextuel = analyserContextuel(domaine, verbose=verbose)
@@ -214,9 +215,15 @@ def main():
         print(f"Erreur : '{args.domaine}' ne semble pas être un nom de domaine valide.", file=sys.stderr)
         sys.exit(1)
 
-    print(f"Calcul du score de parking pour {args.domaine}...")
     score = calculerScoreParking(args.domaine, verbose=args.verbose)
-    print(f"\nScore de parking final pour {args.domaine}: {score}/100")
+
+    if args.verbose:
+        print("\n" + "="*40)
+        print(f"SCORE DE PARKING FINAL POUR {args.domaine.upper()}")
+        print(f"Score : {score}/100")
+        print("="*40)
+    else:
+        print(f"Score de parking pour {args.domaine}: {score}/100")
 
 if __name__ == "__main__":
     main()
