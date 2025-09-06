@@ -38,7 +38,7 @@ class TestParkingScorer(unittest.TestCase):
         mock_response = MagicMock()
         mock_response.status_code = 200
         mock_response.url = "https://some-domain.com"
-        mock_response.text = f"<html><title>{KEYWORDS_FOR_SALE[0]}</title><body>Content here.</body></html>"
+        mock_response.text = "<html><title>buy this domain</title><body>Content here.</body></html>"
         mock_get.return_value = mock_response
 
         score = analyserContenu("forsale-domain.com")
@@ -50,7 +50,7 @@ class TestParkingScorer(unittest.TestCase):
         mock_response = MagicMock()
         mock_response.status_code = 200
         mock_response.url = "https://another-domain.com"
-        mock_response.text = f"<html><body>This page is {KEYWORDS_PARKING_GENERIC[0]}.</body></html>"
+        mock_response.text = "<html><body>This page is coming soon.</body></html>"
         mock_get.return_value = mock_response
 
         score = analyserContenu("generic-parked-domain.com")
@@ -62,7 +62,7 @@ class TestParkingScorer(unittest.TestCase):
         mock_response = MagicMock()
         mock_response.status_code = 200
         mock_response.url = "https://another-domain.com"
-        mock_response.text = f"<html><title>{KEYWORDS_FOR_SALE[0]}</title><body>This page is {KEYWORDS_PARKING_GENERIC[0]}.</body></html>"
+        mock_response.text = "<html><title>buy this domain</title><body>This page is coming soon.</body></html>"
         mock_get.return_value = mock_response
 
         score = analyserContenu("double-keyword-domain.com")
@@ -92,7 +92,7 @@ class TestParkingScorer(unittest.TestCase):
         mock_response = MagicMock()
         mock_response.status_code = 200
         mock_response.url = "https://css-parked.com"
-        mock_response.text = '<html><body><div class="for-sale-banner">Domain for Sale</div></body></html>'
+        mock_response.text = '<html><body><div class="for-sale-banner">Some neutral text</div></body></html>'
         mock_get.return_value = mock_response
 
         score = analyserContenu("css-parked.com")
