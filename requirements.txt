@@ -6,3 +6,4 @@ packaging
 lxml
 python-whois
 matplotlib
+selenium

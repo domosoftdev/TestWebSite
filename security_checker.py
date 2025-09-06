@@ -32,6 +32,7 @@ import whois
 from parking_scorer import calculerScoreParking
 from datetime import timedelta
 import uuid
+from gdpr_checker import GDPRChecker
 
 SEVERITY_SCORES = {
     "CRITICAL": 10,
@@ -686,6 +687,20 @@ def print_human_readable_report(results):
             icon, label = STATUS_ICONS['SUCCESS'], "Faible"
         print(f"  {icon} Score: {parking_score}/100 ({label})")
 
+    if 'gdpr_compliance' in results:
+        print("\n--- Analyse de Conformité RGPD ---")
+        gdpr_results = results['gdpr_compliance']
+        banner_info = gdpr_results.get('cookies', {}).get('consent_banner', {})
+        if banner_info.get('error'):
+            icon = STATUS_ICONS['ERROR']
+            message = f"Erreur lors de l'analyse de la bannière de consentement : {banner_info['error']}"
+        elif banner_info.get('present'):
+            icon = STATUS_ICONS['SUCCESS']
+            message = f"Bannière de consentement aux cookies détectée (sélecteur: {banner_info.get('selector')})."
+        else:
+            icon = STATUS_ICONS['WARNING']
+            message = "Aucune bannière de consentement aux cookies détectée."
+        print(f"  {icon} {message}")
 
     print("\n" + "="*50); print(" LÉGENDE DE LA NOTE :"); print("  A+ : Excellent (0 points)"); print("  A  : Bon (1-10 points)"); print("  B  : Moyen (11-20 points)"); print("  C  : Médiocre (21-40 points)"); print("  D  : Mauvais (41-60 points)"); print("  F  : Critique (>60 points)"); print("="*50)
 
@@ -700,11 +715,18 @@ def main():
     parser = argparse.ArgumentParser(description="Analyseur de sécurité de site web.")
     parser.add_argument("url", help="L'URL du site web à analyser (ex: google.com).")
     parser.add_argument("--formats", type=str, default="", help="Génère des rapports dans les formats spécifiés, séparés par des virgules (ex: json,html,csv).")
+    parser.add_argument("--gdpr", action="store_true", help="Inclut une analyse de conformité RGPD (expérimental, nécessite Selenium).")
     args = parser.parse_args()
     hostname = get_hostname(args.url)
     if not check_host_exists(hostname): print(f"Erreur : L'hôte '{hostname}' est introuvable. Veuillez vérifier le nom de domaine."); sys.exit(1)
     all_results = {'hostname': hostname}
     print(f"Analyse de {hostname} en cours...")
+
+    if args.gdpr:
+        print("Analyse RGPD activée...")
+        gdpr_checker = GDPRChecker()
+        all_results['gdpr_compliance'] = gdpr_checker.check_gdpr_compliance(f"https://{hostname}")
+
     all_results['ssl_certificate'] = check_ssl_certificate(hostname)
     all_results['tls_protocols'] = scan_tls_protocols(hostname)
     all_results['http_redirect'] = check_http_to_https_redirect(hostname)
