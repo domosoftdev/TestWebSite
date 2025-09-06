@@ -1,229 +1,229 @@
 # Web Security Checker
 
-Un outil simple en ligne de commande pour effectuer des vérifications de sécurité de base sur un site web.
+A simple command-line tool to perform basic security checks on a website.
 
 ## Description
 
-Ce script Python analyse une URL donnée pour évaluer certains aspects de sa configuration de sécurité. C'est un outil de base destiné à fournir un aperçu rapide de la posture de sécurité d'un serveur web.
+This Python script analyzes a given URL to assess certain aspects of its security configuration. It is a basic tool intended to provide a quick overview of a web server's security posture.
 
-## Fonctionnalités
+## Features
 
-Le script effectue actuellement les vérifications suivantes :
+The script currently performs the following checks:
 
-1.  **Vérification de la chaîne de confiance et de l'expiration du certificat SSL/TLS**
-    *   C'est le point de départ. Si le certificat est invalide ou expiré, tout le reste est compromis. Un certificat non valide empêche la connexion sécurisée, ce qui expose les données des utilisateurs. Le vérifier en premier garantit que la communication entre le client et le serveur est sécurisée.
+1.  **SSL/TLS Certificate Chain of Trust and Expiration Check**
+    *   This is the starting point. If the certificate is invalid or expired, everything else is compromised. An invalid certificate prevents a secure connection, exposing user data. Checking this first ensures that communication between the client and server is secure.
 
-2.  **Analyse des en-têtes de sécurité HTTP (Strict-Transport-Security, X-Frame-Options, X-Content-Type-Options)**
-    *   Ces en-têtes sont des mesures de sécurité défensives très efficaces et faciles à implémenter.
-    *   **Strict-Transport-Security (HSTS)** force le navigateur à n'utiliser que des connexions HTTPS pour ce site, ce qui réduit le risque de man-in-the-middle.
-    *   **X-Frame-Options** et **Content-Security-Policy (CSP)** protègent contre le clickjacking et l'injection de contenu malveillant en contrôlant comment le site peut être intégré dans d'autres pages.
-    *   **X-Content-Type-Options** empêche les navigateurs d'interpréter le code de manière incorrecte, ce qui protège contre certaines attaques.
+2.  **Analysis of HTTP Security Headers (Strict-Transport-Security, X-Frame-Options, X-Content-Type-Options)**
+    *   These headers are highly effective and easy-to-implement defensive security measures.
+    *   **Strict-Transport-Security (HSTS)** forces the browser to use only HTTPS connections for this site, reducing the risk of man-in-the-middle attacks.
+    *   **X-Frame-Options** and **Content-Security-Policy (CSP)** protect against clickjacking and malicious content injection by controlling how the site can be embedded in other pages.
+    *   **X-Content-Type-Options** prevents browsers from misinterpreting code, which protects against certain attacks.
 
-3.  **Redirections HTTP vers HTTPS**
-    *   Une fois que vous savez que le certificat est valide, assurez-vous que toutes les requêtes non chiffrées sont automatiquement redirigées vers la version sécurisée du site. Si ce n'est pas le cas, un attaquant peut intercepter les premières requêtes des utilisateurs sur une connexion non chiffrée.
+3.  **HTTP to HTTPS Redirections**
+    *   Once you know the certificate is valid, ensure that all unencrypted requests are automatically redirected to the secure version of the site. If not, an attacker can intercept users' initial requests over an unencrypted connection.
 
-4.  **Scan des versions de protocoles SSL/TLS supportées**
-    *   Le script scanne activement le serveur pour déterminer quelles versions de protocoles (de SSL 2.0 à TLS 1.3) sont activées. Il signale les protocoles obsolètes et vulnérables (SSLv2, SSLv3, TLS 1.0, TLS 1.1) comme étant non conformes, car leur utilisation expose à des risques de sécurité connus.
+4.  **Scanning of Supported SSL/TLS Protocol Versions**
+    *   The script actively scans the server to determine which protocol versions (from SSL 2.0 to TLS 1.3) are enabled. It flags obsolete and vulnerable protocols (SSLv2, SSLv3, TLS 1.0, TLS 1.1) as non-compliant, as their use exposes known security risks.
 
-5.  **Vérification des enregistrements DNS de sécurité (A, MX, NS, DMARC, SPF)**
-    *   Le script vérifie les enregistrements DNS fondamentaux (A, MX, NS) et ceux liés à la sécurité des e-mails (DMARC, SPF). Il fournit des conseils de correction si les enregistrements DMARC ou SPF sont manquants.
+5.  **Verification of Security-Related DNS Records (A, MX, NS, DMARC, SPF)**
+    *   The script checks fundamental DNS records (A, MX, NS) and those related to email security (DMARC, SPF). It provides correction advice if DMARC or SPF records are missing.
 
-6.  **Analyse des attributs de cookies (HttpOnly, Secure, SameSite)**
-    *   Des cookies mal configurés peuvent être volés, ce qui expose les sessions des utilisateurs. S'assurer qu'ils sont marqués `HttpOnly` (pour empêcher l'accès via JavaScript), `Secure` (pour forcer le chiffrement) et `SameSite` (pour prévenir les attaques CSRF) protège contre de nombreuses menaces.
+6.  **Analysis of Cookie Attributes (HttpOnly, Secure, SameSite)**
+    *   Poorly configured cookies can be stolen, exposing user sessions. Ensuring they are marked `HttpOnly` (to prevent access via JavaScript), `Secure` (to force encryption), and `SameSite` (to prevent CSRF attacks) protects against many threats.
 
-7.  **Récupération des informations WHOIS**
-    *   Le script tente de récupérer les informations publiques d'enregistrement du domaine (WHOIS), telles que le registrar, les dates de création et d'expiration, et le statut du domaine. Ces informations peuvent être utiles pour le suivi administratif (note : la disponibilité de ces données dépend du registrar et des politiques de confidentialité).
+7.  **Retrieval of WHOIS Information**
+    *   The script attempts to retrieve public domain registration information (WHOIS), such as the registrar, creation and expiration dates, and domain status. This information can be useful for administrative tracking (note: the availability of this data depends on the registrar and privacy policies).
 
 ## Installation
 
-1.  Assurez-vous d'avoir Python 3 installé sur votre système.
-2.  Clonez ce dépôt ou téléchargez les fichiers `security_checker.py` et `requirements.txt`.
-3.  Installez les dépendances nécessaires en utilisant pip :
+1.  Make sure you have Python 3 installed on your system.
+2.  Clone this repository or download the `security_checker.py` and `requirements.txt` files.
+3.  Install the necessary dependencies using pip:
 
     ```bash
     pip install -r requirements.txt
     ```
 
-## Utilisation
+## Usage
 
-Pour analyser un site web, exécutez le script depuis votre terminal en lui passant l'URL ou le nom de domaine comme argument.
+To analyze a website, run the script from your terminal, passing the URL or domain name as an argument.
 
 ```bash
 python3 security_checker.py google.com
 ```
 
-### Exemple de sortie
+### Example Output
 
 ```
-Analyse de l'hôte : google.com
+Analyzing host: google.com
 
---- Analyse du certificat SSL/TLS ---
-  Sujet du certificat : *.google.com
-  Émetteur : WR2
-  Date d'expiration : 2025-09-29
-  Le certificat est valide.
+--- SSL/TLS Certificate Analysis ---
+  Certificate Subject: *.google.com
+  Issuer: WR2
+  Expiration Date: 2025-09-29
+  The certificate is valid.
 
---- Analyse des en-têtes de sécurité HTTP ---
-  Analyse des en-têtes pour l'URL finale : https://www.google.com/
+--- HTTP Security Headers Analysis ---
+  Analyzing headers for the final URL: https://www.google.com/
 
-  En-têtes de sécurité trouvés :
-    - Content-Security-Policy-Report-Only: Trouvé
-    - X-Frame-Options: Trouvé
+  Security headers found:
+    - Content-Security-Policy-Report-Only: Found
+    - X-Frame-Options: Found
 ```
 
 ---
 
-## Outil de Score de Parking (`parking_scorer.py`)
+## Parking Score Tool (`parking_scorer.py`)
 
-Ce projet inclut également un outil dédié au calcul du "score de parking" d'un nom de domaine. Ce score, sur une échelle de 0 à 100, évalue la probabilité qu'un domaine soit "parké" (c'est-à-dire enregistré mais non utilisé pour un site web actif, affichant souvent des publicités ou une page "à vendre").
+This project also includes a dedicated tool for calculating the "parking score" of a domain name. This score, on a scale of 0 to 100, evaluates the probability that a domain is "parked" (i.e., registered but not used for an active website, often displaying ads or a "for sale" page).
 
-Ce score est automatiquement calculé et inclus dans le rapport principal de `security_checker.py`, mais le script `parking_scorer.py` peut aussi être utilisé de manière indépendante pour une analyse rapide et ciblée.
+This score is automatically calculated and included in the main report of `security_checker.py`, but the `parking_scorer.py` script can also be used independently for a quick and targeted analysis.
 
-### Utilisation autonome
+### Standalone Usage
 
-Pour obtenir uniquement le score de parking d'un domaine :
+To get only the parking score of a domain:
 
 ```bash
-python3 parking_scorer.py exemple.com
+python3 parking_scorer.py example.com
 ```
 
-### Exemple de sortie
+### Example Output
 
 ```
-Calcul du score de parking pour exemple.com...
-Score de parking pour exemple.com: 85/100
+Calculating parking score for example.com...
+Parking score for example.com: 85/100
 ```
 
 ---
 
-## Outil de Consolidation (`consolidator.py`)
+## Consolidator Tool (`consolidator.py`)
 
-En plus du scanner principal, ce projet inclut `consolidator.py`, un outil puissant pour analyser les résultats de multiples scans sur la durée. Il vous permet de suivre l'évolution de la posture de sécurité de vos sites web.
+In addition to the main scanner, this project includes `consolidator.py`, a powerful tool for analyzing the results of multiple scans over time. It allows you to track the evolution of your websites' security posture.
 
-### Mise en Place
+### Setup
 
-1.  **Créez un fichier `targets.txt`** à la racine du projet. Listez-y les domaines que vous souhaitez surveiller, un par ligne.
+1.  **Create a `targets.txt` file** in the project root. List the domains you want to monitor, one per line.
     ```
     google.com
     github.com
-    votresite.com
+    yoursite.com
     ```
 
-2.  **Créez un répertoire `scans/`** à la racine du projet. C'est ici que tous les rapports de scan JSON seront stockés.
+2.  **Create a `scans/` directory** in the project root. This is where all JSON scan reports will be stored.
     ```bash
     mkdir scans
     ```
 
-### Génération des Rapports
+### Generating Reports
 
-Pour que le consolidateur fonctionne, il a besoin de données. Exécutez `security_checker.py` en utilisant l'argument `--formats json` pour générer un rapport JSON. Le script nommera automatiquement le fichier (`<domaine>_<date>.json`) et le placera dans le répertoire courant.
+For the consolidator to work, it needs data. Run `security_checker.py` using the `--formats json` argument to generate a JSON report. The script will automatically name the file (`<domain>_<date>.json`) and place it in the current directory.
 
 ```bash
-# Lancez le scan et générez le rapport JSON
-python3 security_checker.py votresite.com --formats json
+# Run the scan and generate the JSON report
+python3 security_checker.py yoursite.com --formats json
 
-# Déplacez le rapport dans le répertoire des scans
-mv votresite.com_180825.json scans/
+# Move the report to the scans directory
+mv yoursite.com_180825.json scans/
 ```
-Répétez cette opération régulièrement pour construire un historique des scans.
+Repeat this operation regularly to build a history of scans.
 
-### Utilisation du Consolidateur
+### Using the Consolidator
 
-Voici les commandes disponibles pour l'outil de consolidation :
+Here are the available commands for the consolidator tool:
 
-#### 1. Voir l'état des scans (`--status`)
-Affiche la liste des cibles de votre fichier `targets.txt` et indique si un scan a été trouvé pour chacune.
+#### 1. View Scan Status (`--status`)
+Displays the list of targets from your `targets.txt` file and indicates whether a scan has been found for each.
 ```bash
 python3 consolidator.py --status
 ```
-*Exemple de sortie :*
+*Example Output:*
 ```
-📊 État des scans cibles :
+📊 Target scan status:
   [✅] google.com
   [❌] github.com
 
-Total: 1 / 2 cibles scannées.
+Total: 1 / 2 targets scanned.
 ```
 
-#### 2. Lister les scans pour un domaine (`--list-scans`)
-Affiche tous les rapports de scan disponibles pour un domaine spécifique, triés par date.
+#### 2. List Scans for a Domain (`--list-scans`)
+Displays all available scan reports for a specific domain, sorted by date.
 ```bash
 python3 consolidator.py --list-scans google.com
 ```
-*Exemple de sortie :*
+*Example Output:*
 ```
-🔎 Scans disponibles pour 'google.com':
-  - Date: 2025-08-18, Score: 49, Note: D
-  - Date: 2025-08-17, Score: 53, Note: D
+🔎 Available scans for 'google.com':
+  - Date: 2025-08-18, Score: 49, Grade: D
+  - Date: 2025-08-17, Score: 53, Grade: D
 ```
 
-#### 3. Comparer deux scans (`--compare`)
-Analyse l'évolution de la sécurité d'un site entre deux dates.
+#### 3. Compare Two Scans (`--compare`)
+Analyzes the security evolution of a site between two dates.
 ```bash
 python3 consolidator.py --compare google.com 2025-08-17 2025-08-18
 ```
-*Exemple de sortie :*
+*Example Output:*
 ```
-🔄 Comparaison des scans pour 'google.com' entre 2025-08-17 et 2025-08-18
+🔄 Comparing scans for 'google.com' between 2025-08-17 and 2025-08-18
 
-Score: 53 (à 2025-08-17) -> 49 (à 2025-08-18)
-  -> ✅ Amélioration du score de 4 points.
+Score: 53 (on 2025-08-17) -> 49 (on 2025-08-18)
+  -> ✅ Score improvement of 4 points.
 
---- Changements des vulnérabilités ---
+--- Vulnerability Changes ---
 
-[✅ VULNÉRABILITÉS CORRIGÉES]
-  - security_headers.en-tetes_securite.x-frame-options.XFO_MISSING
+[✅ FIXED VULNERABILITIES]
+  - security_headers.security_headers.x-frame-options.XFO_MISSING
 
-[⚠️ 6 VULNÉRABILITÉS PERSISTANTES]
+[⚠️ 6 PERSISTENT VULNERABILITIES]
 ```
 
-#### 4. Identifier les scans les plus anciens (`--oldest`)
-Aide à prioriser les prochains scans en montrant les cibles qui n'ont pas été analysées depuis le plus longtemps.
+#### 4. Identify the Oldest Scans (`--oldest`)
+Helps prioritize the next scans by showing which targets have not been analyzed for the longest time.
 ```bash
 python3 consolidator.py --oldest
 ```
-*Exemple de sortie :*
+*Example Output:*
 ```
-🕒 Scans les plus anciens (par cible) :
-  - github.com                Dernier scan: JAMAIS (Priorité haute)
-  - google.com                Dernier scan: 2025-08-18
+🕒 Oldest scans (by target):
+  - github.com                Last scan: NEVER (High priority)
+  - google.com                Last scan: 2025-08-18
 ```
 
-#### 5. Trouver les "Quick Wins" (`--quick-wins`)
-Liste les vulnérabilités faciles à corriger (comme les en-têtes de sécurité manquants) pour un domaine spécifique ou pour tous les domaines scannés.
+#### 5. Find "Quick Wins" (`--quick-wins`)
+Lists easy-to-fix vulnerabilities (like missing security headers) for a specific domain or for all scanned domains.
 ```bash
-# Pour un domaine spécifique
+# For a specific domain
 python3 consolidator.py --quick-wins google.com
 ```
 
-#### 6. Générer un rapport de synthèse HTML (`--summary-html`)
-Crée un fichier `summary_report.html` qui affiche un tableau de bord de l'état de sécurité de toutes les cibles. Ce rapport inclut des indicateurs de tendance, des métriques clés et des colonnes triables.
+#### 6. Generate an HTML Summary Report (`--summary-html`)
+Creates a `summary_report.html` file that displays a dashboard of the security status of all targets. This report includes trend indicators, key metrics, and sortable columns.
 ```bash
 python3 consolidator.py --summary-html
 ```
 
-#### 7. Lister les certificats qui expirent (`--list-expiring-certs`)
-Affiche la liste des certificats SSL/TLS qui expireront dans un nombre de jours donné (30 par défaut).
+#### 7. List Expiring Certificates (`--list-expiring-certs`)
+Displays a list of SSL/TLS certificates that will expire within a given number of days (default is 30).
 ```bash
-# Vérifie les certificats expirant dans les 30 prochains jours
+# Check for certificates expiring in the next 30 days
 python3 consolidator.py --list-expiring-certs
 
-# Vérifie les certificats expirant dans les 90 prochains jours
+# Check for certificates expiring in the next 90 days
 python3 consolidator.py --list-expiring-certs 90
 ```
 
-#### 8. Générer un graphique d'évolution (`--graph`)
-Crée une image (`<domaine>_evolution.png`) montrant l'évolution du score de sécurité pour un domaine spécifique dans le temps.
+#### 8. Generate an Evolution Graph (`--graph`)
+Creates an image (`<domain>_evolution.png`) showing the evolution of the security score for a specific domain over time.
 ```bash
 python3 consolidator.py --graph google.com
 ```
 
-#### 9. Rapport d'actions par vulnérabilité (`--report`)
-Liste tous les domaines affectés par un ou plusieurs types de vulnérabilités, pour faciliter les campagnes de remédiation.
+#### 9. Action Report by Vulnerability (`--report`)
+Lists all domains affected by one or more types of vulnerabilities to facilitate remediation campaigns.
 ```bash
-# Lister tous les sites sans HSTS
+# List all sites without HSTS
 python3 consolidator.py --report hsts
 
-# Lister tous les sites avec des problèmes de DMARC ou de SPF
+# List all sites with DMARC or SPF issues
 python3 consolidator.py --report dmarc spf
 ```
