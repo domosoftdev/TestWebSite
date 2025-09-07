@@ -61,15 +61,12 @@ class TestParkingScorer(unittest.TestCase):
         mock_response = MagicMock()
         mock_response.status_code = 200
         mock_response.url = "https://another-domain.com"
-        mock_response.text = "<html><title>Domain for sale</title><body>This page is under construction.</body></html>"
+        # This is the clear, single source of truth for this test.
+        mock_response.text = "<html><title>My Awesome Domain</title><body>This domain is for sale and is under construction.</body></html>"
         mock_get.return_value = mock_response
 
         score = analyserContenu("double-keyword-domain.com")
-        # 10 (sale) + 10 (generic) + 5 (title) + 5 (low volume) = 30. Let's adjust the mock to get 25.
-        # Let's use a non-suspicious title.
-        mock_response.text = "<html><title>My Awesome Domain</title><body>This domain is for sale and is under construction.</body></html>"
-        score = analyserContenu("double-keyword-domain.com")
-        self.assertEqual(score, 25) # 10 (sale) + 10 (generic) + 5 (low volume)
+        self.assertEqual(score, 25)
 
     @patch('parking_scorer.requests.Session.get')
     def test_analyserContenu_no_keywords(self, mock_get):
