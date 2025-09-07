@@ -1,3 +1,5 @@
+[Lire en français](README.fr.md)
+
 # Web Security Checker
 
 A simple command-line tool to perform basic security checks on a website.
